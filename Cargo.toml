@@ -1,0 +1,19 @@
+[package]
+name = "netter"
+version = "0.1.0"
+edition = "2024"
+description = "CLI is a tool for quick and easy server startup!"
+license = "MIT"
+reepository = "https://github.com/bjfssd757/Netter"
+
+[dependencies]
+clap = { version="4.5.35", features=["derive"] }
+flexi_logger = "0.30.1"
+futures-util = "0.3.31"
+lazy_static = "1.5.0"
+log = "0.4.27"
+serde = { version="1.0.219", features=["derive"] }
+serde_json = "1.0.140"
+tokio = { version="1.44.2", features=["full"] }
+tokio-tungstenite = "0.26.2"
+toml = "0.8.20"
