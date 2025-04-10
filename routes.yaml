@@ -1,0 +1,10 @@
+routes:
+  - method: "get"
+    path: "/"
+    response: "Hello!"
+  - method: "post"
+    path: "/post"
+    response: "Hello from post!"
+  - method: "delete"
+    path: "/delete"
+    response: "Hello from delete!"

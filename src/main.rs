@@ -9,9 +9,10 @@ use crate::state::{load_state, save_state};
 
 mod commands;
 mod state;
+mod http;
 
 #[allow(async_fn_in_trait)]
-pub trait ServerTrait {
+pub trait WebSocketTrait {
     fn new(host: String, port: u16, protect: bool) -> Self;
     async fn start(&self) -> Result<(), Box<dyn std::error::Error>>;
     fn default() -> Self;
@@ -47,7 +48,13 @@ enum Commands {
         websocket: bool,
 
         #[arg(long)]
+        http: bool,
+
+        #[arg(long)]
         path: Option<String>,
+
+        #[arg(long)]
+        routes: Option<String>,
 
         #[arg(long)]
         host: Option<String>,
@@ -73,11 +80,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
     match cli.subcommand {
-        Some(Commands::Start { tcp, udp, websocket, path, host, port, protect}) => {
+        Some(Commands::Start { tcp, udp, websocket, http, path, routes, host, port, protect}) => {
             if let Some(path) = path {
-                start_with_config(tcp, udp, websocket, &path).await?;
+                start_with_config(tcp, udp, websocket, http, &path, routes).await?;
             } else {
-                start_without_config(tcp, udp, websocket, protect, host, port).await?;
+                start_without_config(tcp, udp, websocket, http, protect, host, port, routes).await?;
             }
             Ok(())
         },
@@ -97,7 +104,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
-impl ServerTrait for Server {
+impl WebSocketTrait for Server {
     fn new(host: String, port: u16, protect: bool) -> Self {
         Self {
             host,
