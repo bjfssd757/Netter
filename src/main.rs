@@ -13,7 +13,7 @@ mod state;
 #[allow(async_fn_in_trait)]
 pub trait ServerTrait {
     fn new(host: String, port: u16, protect: bool) -> Self;
-    async fn start(&self);
+    async fn start(&self) -> Result<(), Box<dyn std::error::Error>>;
     fn default() -> Self;
 }
 
@@ -69,26 +69,30 @@ pub struct Server {
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
     match cli.subcommand {
         Some(Commands::Start { tcp, udp, websocket, path, host, port, protect}) => {
             if let Some(path) = path {
-                start_with_config(tcp, udp, websocket, &path).await;
+                start_with_config(tcp, udp, websocket, &path).await?;
             } else {
-                start_without_config(tcp, udp, websocket, protect, host, port).await;
+                start_without_config(tcp, udp, websocket, protect, host, port).await?;
             }
+            Ok(())
         },
         Some(Commands::Stop) => {
             if let Some(state) = load_state() {
-                stop(state.pid).await;
+                stop(state.pid).await?;
+                Ok(())
             } else {
-                panic!("Server not running")
+                Err(Box::<dyn std::error::Error>::from(
+                    "Server not running"))
             }
         },
         None => {
-            panic!("No command provided. Use --help for more information.");
+            Err(Box::<dyn std::error::Error>::from(
+                "No command provided. Use --help for more information."))
         }
     }
 }
@@ -102,9 +106,10 @@ impl ServerTrait for Server {
         }
     }
 
-    async fn start(&self) {
+    async fn start(&self) -> Result<(), Box<dyn std::error::Error>> {
         if self.protect {
-            println!("Server is protected"); // there should be code for ssl or tls protect
+            println!("Server is protected");
+            Ok(()) // there should be code for ssl or tls protect
         }
         else {
             println!("Starting server...");
@@ -112,21 +117,26 @@ impl ServerTrait for Server {
             let addr = format!("{}:{}", self.host, self.port);
             let listener = TcpListener::bind(&addr)
                 .await
-                .unwrap_or_else(|e| panic!("Failed to bind: {e}"));
+                .map_err(|e| format!("Failed to bind: {e}"))?;
 
             save_state(
                 String::from("websocket"),
                 self.host.clone(),
                 self.port.clone()
-            );
+            )?;
 
             println!("Server running on {}", &addr);
 
             while let Ok((stream, _)) = listener.accept().await {
                 tokio::spawn(async move {
-                    let ws_stream = accept_async(stream)
-                        .await
-                        .unwrap_or_else(|e| panic!("Error on set websockets: {e}"));
+                    let ws_stream =  match accept_async(stream)
+                        .await {
+                            Ok(ws) => ws,
+                            Err(e) => {
+                                eprintln!("Error during WebSocket handshake: {}", e);
+                                return
+                            }
+                        };
 
                         println!("New connection!");
 
@@ -141,12 +151,14 @@ impl ServerTrait for Server {
                                 }
                             },
                             Err(e) => {
-                                panic!("Failed while reading message: {e}");
+                                eprintln!("Failed while reading message: {e}");
+                                return
                             }
                         }
                     }
                 });
             }
+            Ok(())
         }
     }
 

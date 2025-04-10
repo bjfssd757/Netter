@@ -1,7 +1,7 @@
 use std::fs;
 use crate::{Server, ServerTrait};
 
-pub async fn start_with_config(tcp: bool, udp: bool, websocket: bool, path: &String) {
+pub async fn start_with_config(tcp: bool, udp: bool, websocket: bool, path: &String) -> Result<(), Box<dyn std::error::Error>> {
     println!("Start with params:");
     if tcp {
         println!("TCP: true");
@@ -11,17 +11,19 @@ pub async fn start_with_config(tcp: bool, udp: bool, websocket: bool, path: &Str
     }
     if websocket {
         let config = fs::read_to_string(path)
-            .unwrap_or_else(|_| panic!("Failed to read config file"));
+            .map_err(|_| "Failed to read config file")?;
 
         let server: Server = toml::from_str(&config)
-            .unwrap_or_else(|_| panic!("Failed to parse config file"));
+            .map_err(|_|"Failed to parse config file")?;
         
-        server.start().await;
+        server.start().await?;
     }
     println!("Config path: {}", path);
+
+    Ok(())
 }
 
-pub async fn start_without_config(tcp: bool, udp: bool, websocket: bool, protect: bool, host: Option<String>, port: Option<u16>) {
+pub async fn start_without_config(tcp: bool, udp: bool, websocket: bool, protect: bool, host: Option<String>, port: Option<u16>) -> Result<(), Box<dyn std::error::Error>> {
     println!("Start without config:");
 
     match &host {
@@ -37,17 +39,20 @@ pub async fn start_without_config(tcp: bool, udp: bool, websocket: bool, protect
                     if websocket {
                         let server: Server = Server::new(host.clone(), port.clone(), protect.clone());
 
-                        server.start().await;
+                        server.start().await?;
                     }
                     println!("Protect: {}", protect);
+                    Ok(())
                 },
                 None => {
-                    panic!("Port is required when config is not provided!");
+                    Err(Box::<dyn std::error::Error>::from(
+                        "Port is required when config is not provided!"))
                 }
             }
         },
         None => {
-            println!("Host is required when config is not provided!");
+            Err(Box::<dyn std::error::Error>::from(
+                "Host is required when config is not provided!"))
         }
     }
 }

@@ -10,17 +10,18 @@ pub struct ServerState {
     pub port: u16,
 }
 
-pub fn save_state(kind: String, host: String, port: u16) {
+pub fn save_state(kind: String, host: String, port: u16) -> Result<(), Box<dyn std::error::Error>> {
     let state = ServerState {
         kind,
         pid: std::process::id(),
         host,
         port,
     };
-    let serialized = serde_json::to_string(&state)
-        .unwrap();
+    let serialized = serde_json::to_string(&state)?;
     std::fs::write(&STATE_FILE, serialized)
-        .unwrap_or_else(|e| panic!("Failed to write in state file: {e}"));
+        .map_err(|e| format!("Failed to write in state file: {e}"))?;
+
+    Ok(())
 }
 
 pub fn load_state() -> Option<ServerState> {
@@ -31,6 +32,8 @@ pub fn load_state() -> Option<ServerState> {
     }
 }
 
-pub fn delete_file() {
-    std::fs::remove_file(&STATE_FILE).unwrap_or_else(|e| panic!("Failed to delete state file: {e}"));
+pub fn delete_file() -> Result<(), Box<dyn std::error::Error>> {
+    std::fs::remove_file(&STATE_FILE)
+        .map_err(|e| format!("Failed to delete state file: {e}"))?;
+    Ok(())
 }
