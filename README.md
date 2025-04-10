@@ -1,2 +1,3 @@
 # Netter
-CLI is a tool for quick and easy server startup!
+
+Netter is a CLI tool for fast and easy server startup!

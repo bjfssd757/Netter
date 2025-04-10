@@ -2,7 +2,7 @@
 name = "netter"
 version = "0.1.0"
 edition = "2024"
-description = "CLI is a tool for quick and easy server startup!"
+description = "Netter is a CLI tool for fast and easy server startup!"
 license = "MIT"
 reepository = "https://github.com/bjfssd757/Netter"
 
