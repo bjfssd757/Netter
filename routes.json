@@ -1,0 +1,24 @@
+{
+  "addr": [127, 0, 0, 1],
+  "port": 8080,
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/",
+      "response": {
+        "body": "Welcome to the server!",
+        "headers": [["Content-Type", "text/plain"]],
+        "status": 200
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/echo",
+      "response": {
+        "body": "Echo endpoint",
+        "headers": [["Content-Type", "text/plain"]],
+        "status": 200
+      }
+    }
+  ]
+}

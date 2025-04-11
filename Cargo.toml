@@ -7,10 +7,12 @@ license = "MIT"
 reepository = "https://github.com/bjfssd757/Netter"
 
 [dependencies]
-actix-web = "4.10.2"
 clap = { version="4.5.35", features=["derive"] }
 flexi_logger = "0.30.1"
 futures-util = "0.3.31"
+http-body-util = "0.1.3"
+hyper = { version="1.6.0", features=["full"] }
+hyper-util = { version="0.1.11", features=["full"] }
 lazy_static = "1.5.0"
 log = "0.4.27"
 serde = { version="1.0.219", features=["derive"] }

@@ -9,7 +9,7 @@ use crate::state::{load_state, save_state};
 
 mod commands;
 mod state;
-mod http;
+mod core;
 
 #[allow(async_fn_in_trait)]
 pub trait WebSocketTrait {
@@ -54,9 +54,6 @@ enum Commands {
         path: Option<String>,
 
         #[arg(long)]
-        routes: Option<String>,
-
-        #[arg(long)]
         host: Option<String>,
 
         #[arg(long)]
@@ -80,11 +77,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
     match cli.subcommand {
-        Some(Commands::Start { tcp, udp, websocket, http, path, routes, host, port, protect}) => {
+        Some(Commands::Start { tcp, udp, websocket, http, path, host, port, protect}) => {
             if let Some(path) = path {
-                start_with_config(tcp, udp, websocket, http, &path, routes).await?;
+                start_with_config(tcp, udp, websocket, http, &path).await?;
             } else {
-                start_without_config(tcp, udp, websocket, http, protect, host, port, routes).await?;
+                start_without_config(tcp, udp, websocket, http, protect, host, port).await?;
             }
             Ok(())
         },
