@@ -8,6 +8,7 @@ Netter is a CLI tool for quickly and easily launching servers.
 * [Functional](#functional)
 * [Documentation](#documentation)
 * [Installation](#installation)
+* [Dependencies](#dependencies)
 
 ## Features
 
@@ -105,3 +106,10 @@ curl --proto '=https' --tlsv1.2 https://sh.rustup.rs -sSf | sh
 ```bash
 cargo install netter
 ```
+
+## Dependencies
+
+Netter uses the following key libraries:
+
+*   [tokio](https://tokio.rs/): An asynchronous runtime for Rust.
+*   [hyper](https://hyper.rs/): An HTTP library for Rust.
