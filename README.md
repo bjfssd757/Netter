@@ -138,6 +138,7 @@ netter start --http --host 127.0.0.1 --port 8080 --path routes.yaml
 * **--host**: specifies the host for the server;
 * **--port**: specifies the port for the server:
 * **--path**: will specify the path to the configuration file for the server;
+* **--protect**: whether to use ssl/tls for the server. True or False;
 
 
 ### Stop
