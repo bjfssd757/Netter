@@ -1,0 +1,25 @@
+ascii_alpha = _{ 'a'..'z' | 'A'..'Z' }
+ascii_alphanumeric = _{ ascii_alpha | '0'..'9' }
+ascii_digit = _{ '0'..'9' }
+string = @{ "\"" ~ (escape | !("\"" | "\\") ~ ANY)* ~ "\"" } // Строка в двойных кавычках
+escape = { "\\\"" | "\\\\" | "\\/" | "\\b" | "\\f" | "\\n" | "\\r" | "\\t" } // Экранированные символы
+function_call = { identifier ~ "(" ~ (expression ~ ("," ~ expression)*)? ~ ")" } // Вызов функции: <идентификатор>(<выражение>, ...)
+
+route_definition = { "route" ~ path ~ method ~ block }
+path = { "\"" ~ (ascii_alphanumeric | "/" | "{" | "}")* ~ "\"" } // Пример: "/users" или "/users/{id}"
+method = { "GET" | "POST" | "PUT" | "DELETE" }
+block = { "{" ~ statements ~ "}" }
+statements = { statement* }
+statement = { assign_statement | expression_statement } // Пример: let x = 1; или x + 1; (для более сложных случаев)
+
+assign_statement = { "let" ~ identifier ~ "=" ~ expression ~ ";" }
+expression_statement = { expression ~ ";" }
+expression = { term ~ (("+" | "-") ~ term)* }
+term = { factor ~ (("*" | "/") ~ factor)* }
+factor = { number | identifier | "(" ~ expression ~ ")" }
+
+identifier = @{ ascii_alpha ~ (ascii_alphanumeric*)} // Имя переменной
+number = @{  ("-"? ~ (ascii_digit+ ~ ("." ~ ascii_digit*)?)) } // Целое или дробное число
+
+WHITESPACE = _{ " " | "\t" | "\n" | "\r" }
+COMMENT = _{ "//" ~ (!"\n" ~ ANY)* ~ "n" | "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
