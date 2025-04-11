@@ -114,3 +114,36 @@ Netter uses the following key libraries:
 
 *   [tokio](https://tokio.rs/): An asynchronous runtime for Rust.
 *   [hyper](https://hyper.rs/): An HTTP library for Rust.
+
+## Commands
+
+### Start
+
+This command will start the server.
+
+Use:
+
+``` powershell
+netter start --http --host 127.0.0.1 --port 8080 --path routes.yaml
+```
+
+**Flags**:
+* **--http**: will start the server in HTTP mode;
+* **--websocket**: will start the server in websocket mode;
+* **--grpc**: will start the server in gRPC mode;
+* **--tcp**: will start the server in TCP mode;
+* **--udp**: will start the server in UDP mode;
+
+* **--host**: specifies the host for the server;
+* **--port**: specifies the port for the server:
+* **--path**: will specify the path to the configuration file for the server;
+
+
+### Stop
+
+This command will stop the server.
+
+Use:
+``` powershell
+netter stop
+```
