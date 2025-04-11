@@ -1,25 +1,35 @@
+// src/core/language/grammar.pest
+
+// Built-in rules (must be defined before use)
 ascii_alpha = _{ 'a'..'z' | 'A'..'Z' }
 ascii_alphanumeric = _{ ascii_alpha | '0'..'9' }
 ascii_digit = _{ '0'..'9' }
-string = @{ "\"" ~ (escape | !("\"" | "\\") ~ ANY)* ~ "\"" } // Строка в двойных кавычках
-escape = { "\\\"" | "\\\\" | "\\/" | "\\b" | "\\f" | "\\n" | "\\r" | "\\t" } // Экранированные символы
-function_call = { identifier ~ "(" ~ (expression ~ ("," ~ expression)*)? ~ ")" } // Вызов функции: <идентификатор>(<выражение>, ...)
 
 route_definition = { "route" ~ path ~ method ~ block }
 path = { "\"" ~ (ascii_alphanumeric | "/" | "{" | "}")* ~ "\"" } // Пример: "/users" или "/users/{id}"
 method = { "GET" | "POST" | "PUT" | "DELETE" }
-block = { "{" ~ statements ~ "}" }
-statements = { statement* }
+block = { "{" ~ WHITESPACE* ~ statements ~ WHITESPACE* ~ "}" }
+statements = { (WHITESPACE* ~ statement)* }
 statement = { assign_statement | expression_statement } // Пример: let x = 1; или x + 1; (для более сложных случаев)
 
-assign_statement = { "let" ~ identifier ~ "=" ~ expression ~ ";" }
-expression_statement = { expression ~ ";" }
-expression = { term ~ (("+" | "-") ~ term)* }
-term = { factor ~ (("*" | "/") ~ factor)* }
-factor = { number | identifier | "(" ~ expression ~ ")" }
+assign_statement = { "let" ~ identifier ~ "=" ~ expression}
+expression_statement = { expression }
+expression = { term ~ ((add | subtract) ~ term)* }
+term = { power ~ ((multiply | divide) ~ power)* }
+power = { factor ~ (power_op ~ factor)* }
+factor = { number | string | identifier | function_call | "(" ~ expression ~ ")" }
 
+function_call = { identifier ~ "(" ~ (expression ~ ("," ~ expression)*)? ~ ")" } // Вызов функции: <идентификатор>(<выражение>, ...)
+add = { "+" } // Правило для сложения
+subtract = { "-" } // Правило для вычитания
+multiply = { "*" } // Правило для умножения
+divide = { "/" } // Правило для деления
+power_op = { "^" } // Правило для возведения в степень (переименовано, чтобы избежать конфликта с power)
+equals = { "=" } // Правило для приравнивания
+string = @{ "\"" ~ (escape | !("\"" | "\\") ~ ANY)* ~ "\"" } // Строка в двойных кавычках
+escape = { "\\\"" | "\\\\" | "\\/" | "\\b" | "\\f" | "\\n" | "\\r" | "\\t" } // Экранированные символы
 identifier = @{ ascii_alpha ~ (ascii_alphanumeric*)} // Имя переменной
 number = @{  ("-"? ~ (ascii_digit+ ~ ("." ~ ascii_digit*)?)) } // Целое или дробное число
 
 WHITESPACE = _{ " " | "\t" | "\n" | "\r" }
-COMMENT = _{ "//" ~ (!"\n" ~ ANY)* ~ "n" | "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
+COMMENT = _{ "//" ~ (!"\n" ~ ANY)* ~ "\n" | "/*" ~ (!"*/" ~ ANY)* ~ "*/" }

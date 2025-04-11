@@ -63,6 +63,10 @@ enum Commands {
         protect: bool,
     },
     Stop,
+    Parse {
+        #[arg(long)]
+        path: String,
+    },
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -93,6 +97,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Err(Box::<dyn std::error::Error>::from(
                     "Server not running"))
             }
+        },
+        Some(Commands::Parse { path }) => {
+            commands::start::start_parse(path);
+            Ok(())
         },
         None => {
             Err(Box::<dyn std::error::Error>::from(

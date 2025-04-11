@@ -24,6 +24,7 @@ pub enum Operator {
     Subtract,           // -
     Multiply,           // *
     Divide,             // /
+    Power,              // ^
     Equals,             // ==
     NotEquals,          // !=
     GreaterThan,        // >

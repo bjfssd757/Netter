@@ -2,6 +2,12 @@ use std::fs;
 use crate::{Server, WebSocketTrait};
 use crate::core::http_core;
 use crate::core::http_core::HTTP;
+use crate::core::language::parser::start;
+
+pub fn start_parse(path: String) {
+    println!("Go to start parsing");
+    start(path);
+}
 
 pub async fn start_with_config(tcp: bool, udp: bool, websocket: bool, http: bool, path: &String) -> Result<(), Box<dyn std::error::Error>> {
     println!("Start with params:");
