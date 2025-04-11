@@ -9,6 +9,7 @@ Netter is a CLI tool for quickly and easily launching servers.
 * [Documentation](#documentation)
 * [Installation](#installation)
 * [Dependencies](#dependencies)
+* [Commands](#commands)
 
 ## Features
 
