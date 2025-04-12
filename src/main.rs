@@ -67,6 +67,7 @@ enum Commands {
         #[arg(long)]
         path: String,
     },
+    Client,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -102,6 +103,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             commands::start::start_parse(path);
             Ok(())
         },
+        Some(Commands::Client) => {
+            // client::client::start();
+            Ok(())
+        }
         None => {
             Err(Box::<dyn std::error::Error>::from(
                 "No command provided. Use --help for more information."))

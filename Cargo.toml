@@ -8,6 +8,8 @@ reepository = "https://github.com/bjfssd757/Netter"
 
 [dependencies]
 clap = { version="4.5.35", features=["derive"] }
+diesel = { version = "2.2.9", features = ["postgres"] }
+dotenvy = "0.15.7"
 flexi_logger = "0.30.1"
 futures-util = "0.3.31"
 http-body-util = "0.1.3"

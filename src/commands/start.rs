@@ -9,6 +9,11 @@ pub fn start_parse(path: String) {
     start(path);
 }
 
+// pub fn start_client() {
+//     println!("Go to start client");
+//     client::start();
+// }
+
 pub async fn start_with_config(tcp: bool, udp: bool, websocket: bool, http: bool, path: &String) -> Result<(), Box<dyn std::error::Error>> {
     println!("Start with params:");
     if tcp {
