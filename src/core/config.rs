@@ -6,6 +6,9 @@ use serde::Deserialize;
 
 #[derive(Debug)]
 pub enum Commands {
+    Kind(String),
+    Host(String),
+    Port(u16),
     Routes(RouteConfig),
     RoutesDefinitionLanguagePath(String),
     Timeout(i64),
@@ -15,67 +18,67 @@ pub enum Commands {
     Pool(PoolConfigure),
     Enviroment(EnviromentConfigure),
     Cache(CacheConfigure),
-    Monitoring(),
+    Monitoring(MonitoringConfigure),
 }
 
 #[derive(Debug, Deserialize)]
-pub enum Response {
-    Status(i64),
-    Body(String),
-    Headers(Vec<(String, String)>),
-    Connect(Database),
-    Disconnect(Database),
+pub struct Response {
+    pub status: u16,
+    pub body: String,
+    pub headers: Vec<(String, String)>,
+    connect: Option<Database>,
+    disconnect: Option<Database>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct MonitoringConfigure {
-    enable: bool,
-    endpoint: String,
+    pub enable: bool,
+    pub endpoint: String,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct CacheConfigure {
-    enable: bool,
-    kind: String,
-    ttl: i64,
-    host: String,
-    port: i64,
+    pub enable: bool,
+    pub kind: String,
+    pub ttl: i64,
+    pub host: String,
+    pub port: i64,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct EnviromentConfigure {
-    database_url: String,
-    api_key: String,
+    pub database_url: String,
+    pub api_key: String,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct PoolConfigure {
-    max_connection: i64,
-    min_connection: i64,
+    pub max_connection: i64,
+    pub min_connection: i64,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct SslConfigure {
-    enable: bool,
-    cert_path: String,
-    key_path: String,
+    pub enable: bool,
+    pub cert_path: String,
+    pub key_path: String,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct Logger {
-    level: String,
-    file: String,
+    pub level: String,
+    pub file: String,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct RouteConfig {
-    path: String,
-    method: String,
-    response: Response,
+    pub path: String,
+    pub method: String,
+    pub response: Response,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct Database {
+struct Database {
     uri: String,
     user_name: String,
     password: String,

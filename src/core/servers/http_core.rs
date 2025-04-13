@@ -2,7 +2,7 @@ use http_body_util::{combinators::BoxBody, BodyExt, Empty, Full};
 use hyper::{body::{self, Bytes}, header::HeaderName, server::conn::http1, service::service_fn, Request, Response, StatusCode};
 use serde::{Deserialize, Serialize};
 use std::fs;
-use crate::state;
+use crate::{core::config_parser::load_config, state};
 
 #[derive(Debug)]
 pub struct Routes {
@@ -28,8 +28,6 @@ pub struct Server {
 pub trait HTTP {
     fn new(addr: Vec<u16>, port: u16, routes: Routes) -> Self;
     async fn start(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
-    //async fn handler(req: Request<body::Incoming>)
-                //-> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error>;
 }
 
 #[derive(Serialize, Deserialize)]
@@ -54,12 +52,10 @@ pub struct RespConfig {
 }
 
 impl Server {
-    pub fn from_config_file(file_path: &str) -> Result<Self, Box<dyn std::error::Error>> {
-        let config_data = fs::read_to_string(file_path)?;
-
+    pub fn configure(file_path: &str) -> Result<Self, Box<dyn std::error::Error>> {
         println!("Read config data");
 
-        let config: Config = serde_json::from_str(&config_data)?;
+        let config = load_config(file_path)?;
 
         let routes = config.routes.into_iter().map(|route| Routes {
             method: route.method,
@@ -72,7 +68,10 @@ impl Server {
         }).collect();
 
         Ok(Server {
-            addr: config.addr,
+            addr: config.host.to_string()
+                .split('.')
+                .map(|s| s.parse::<u16>().unwrap())
+                .collect(),
             port: config.port,
             routes,
         })
@@ -81,7 +80,7 @@ impl Server {
 
 async fn handler(req: Request<body::Incoming>)
             -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
-    let routes = Server::from_config_file("routes.json")
+    let routes = Server::configure("routes.json")
                 .unwrap();
     println!("routes: {:?}", &routes);
     for route in routes.routes {
@@ -97,7 +96,7 @@ async fn handler(req: Request<body::Incoming>)
             return Ok(response);
         }
     }
-    // Если маршрут не найден, возвращаем 404
+
     let mut not_found = Response::new(empty());
     *not_found.status_mut() = StatusCode::NOT_FOUND;
     Ok(not_found)

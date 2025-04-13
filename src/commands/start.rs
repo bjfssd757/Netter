@@ -1,13 +1,12 @@
-use std::fs;
-use crate::{Server, WebSocketTrait};
-use crate::core::http_core;
-use crate::core::http_core::HTTP;
-use crate::core::language::parser::start;
+use crate::core::config_parser::load_config;
+use crate::core::servers::webcosket_core::{Server, WebSocketTrait};
+use crate::core::servers::http_core;
+use crate::core::servers::http_core::HTTP;
 
-pub fn start_parse(path: String) {
-    println!("Go to start parsing");
-    start(path);
-}
+// pub fn start_parse(path: String) {
+//     println!("Go to start parsing");
+//     start(path);
+// }
 
 // pub fn start_client() {
 //     println!("Go to start client");
@@ -23,16 +22,18 @@ pub async fn start_with_config(tcp: bool, udp: bool, websocket: bool, http: bool
         println!("UDP: true");
     }
     if websocket {
-        let config = fs::read_to_string(path)
-            .map_err(|_| "Failed to read config file")?;
+        let conf = load_config(path)?;
 
-        let server: Server = toml::from_str(&config)
-            .map_err(|_|"Failed to parse config file")?;
+        let server: Server = Server::new(
+            conf.host.to_lowercase(),
+            conf.port,
+            conf.protect,
+        );
         
         server.start().await?;
     }
     if http {
-        let server: http_core::Server = http_core::Server::from_config_file(path)
+        let server: http_core::Server = http_core::Server::configure(path)
             .map_err(|_| "Failed to parse config file")?;
 
         server.start().await
