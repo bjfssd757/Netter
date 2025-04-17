@@ -1,7 +1,6 @@
 use http_body_util::{combinators::BoxBody, BodyExt, Empty, Full};
 use hyper::{body::{self, Bytes}, header::HeaderName, server::conn::http1, service::service_fn, Request, Response, StatusCode};
 use serde::{Deserialize, Serialize};
-use std::fs;
 use crate::{core::config_parser::load_config, state};
 
 #[derive(Debug)]
@@ -103,7 +102,7 @@ async fn handler(req: Request<body::Incoming>)
 }
 
 impl HTTP for Server {
-    
+
     fn new(addr: Vec<u16>, port: u16, routes: Routes) -> Self {
         Server {
             addr,

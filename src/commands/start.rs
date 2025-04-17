@@ -2,6 +2,14 @@ use crate::core::config_parser::load_config;
 use crate::core::servers::webcosket_core::{Server, WebSocketTrait};
 use crate::core::servers::http_core;
 use crate::core::servers::http_core::HTTP;
+use std::process::Command;
+use log::{
+    info,
+    warn,
+    error,
+    debug,
+    trace
+};
 
 // pub fn start_parse(path: String) {
 //     println!("Go to start parsing");
@@ -13,13 +21,22 @@ use crate::core::servers::http_core::HTTP;
 //     client::start();
 // }
 
+pub fn start_client() {
+    let output = Command::new("netter")
+        .arg("client")
+        .output()
+        .expect("Failed to start client UI");
+
+    trace!("Client output: {:?}", output);
+}
+
 pub async fn start_with_config(tcp: bool, udp: bool, websocket: bool, http: bool, path: &String) -> Result<(), Box<dyn std::error::Error>> {
     println!("Start with params:");
     if tcp {
-        println!("TCP: true");
+        info!("TCP: true");
     }
     if udp {
-        println!("UDP: true");
+        info!("UDP: true");
     }
     if websocket {
         let conf = load_config(path)?;
@@ -30,16 +47,26 @@ pub async fn start_with_config(tcp: bool, udp: bool, websocket: bool, http: bool
             conf.protect,
         );
         
-        server.start().await?;
+        server.start().await
+            .map_err(|e| {
+                error!("Failed to start websocket server: {}", &e);
+                "Failed to start websocket server"
+            })?;
     }
     if http {
         let server: http_core::Server = http_core::Server::configure(path)
-            .map_err(|_| "Failed to parse config file")?;
+            .map_err(|e| {
+                error!("Failed to configure http server: {}", &e);
+                "Failed to configure http server"
+            })?;
 
         server.start().await
-            .map_err(|_| "Failed to start server")?;
+            .map_err(|e| {
+                error!("Failed to start http server: {}", &e);
+                "Failed to start http server"
+            })?;
     }
-    println!("Config path: {}", path);
+    trace!("Config path: {}", path);
 
     Ok(())
 }
@@ -52,29 +79,34 @@ pub async fn start_without_config(tcp: bool, udp: bool, websocket: bool, http: b
             match &port {
                 Some(port) => {
                     if tcp {
-                        println!("TCP: true");
+                        info!("TCP: true");
                     }
                     if udp {
-                        println!("UDP: true");
+                        info!("UDP: true");
                     }
                     if websocket {
                         let server: Server = Server::new(host.clone(), port.clone(), protect.clone());
 
-                        server.start().await?;
+                        server.start().await.map_err(|e| {
+                            error!("Failed to start websocket server: {}", &e);
+                            "Failed to start websocket server"
+                        })?;
                     }
                     if http {
-                        eprintln!("HTTP server not avaible without config!");
+                        warn!("HTTP server not avaible without config!");
                     }
-                    println!("Protect: {}", protect);
+                    info!("Protect: {}", protect);
                     Ok(())
                 },
                 None => {
+                    error!("Port is required when config is not provided!");
                     Err(Box::<dyn std::error::Error>::from(
                         "Port is required when config is not provided!"))
                 }
             }
         },
         None => {
+            error!("Host is required when config is not provided!");
             Err(Box::<dyn std::error::Error>::from(
                 "Host is required when config is not provided!"))
         }
