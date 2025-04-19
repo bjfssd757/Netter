@@ -4,3 +4,4 @@ SERVER_STATE.json
 /.vscode
 /build
 /logs
+*.log

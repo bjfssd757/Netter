@@ -65,6 +65,7 @@ enum Commands {
         path: String,
     },
     Client,
+    Version,
 }
 
 #[tokio::main]
@@ -109,6 +110,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             start::start_client();
             Ok(())
         },
+        Some(Commands::Version) => {
+            println!("Netter version 0.3.0");
+            Ok(())
+        }
         None => {
             Err(Box::<dyn std::error::Error>::from(
                 "No command provided. Use --help for more information."))

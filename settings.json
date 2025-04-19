@@ -1,0 +1,29 @@
+{
+    "ui": {
+      "theme": "Dark Theme",
+      "language": "en",
+      "window": {
+        "width": 1024,
+        "height": 768,
+        "maximized": false
+      }
+    },
+    "editor": {
+      "font_family": "Consolas",
+      "font_size": 12,
+      "tab_size": 4,
+      "auto_indent": true,
+      "show_line_numbers": true,
+      "highlight_current_line": true,
+      "auto_save": true,
+      "auto_save_interval": 60
+    },
+    "paths": {
+      "last_project": "C:/Projects/MyProject",
+      "templates_dir": "C:/Templates",
+      "recent_files": [
+        "C:/Projects/MyProject/file1.rd",
+        "C:/Projects/MyProject/file2.rd"
+      ]
+    }
+  }

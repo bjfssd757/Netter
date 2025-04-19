@@ -1,24 +1,70 @@
-#include "headers/mainwindow.h"
+#include "ui/mainwindow.h"
+#include "core/settings_manager.h"
 #include <QApplication>
 #include <QFile>
-#include <QString>
-#include <QLatin1String>
+#include <QTextStream>
+#include <QCommandLineParser>
+
+static QFile logFile("debug_output.log");
+
+void customMessageHandler(QtMsgType type, const QMessageLogContext &context, const QString &msg) {
+    if (!logFile.isOpen()) {
+        return;
+    }
+
+    QTextStream out(&logFile);
+    switch (type) {
+    case QtDebugMsg:
+        out << "[DEBUG] ";
+        break;
+    case QtWarningMsg:
+        out << "[WARNING] ";
+        break;
+    case QtCriticalMsg:
+        out << "[CRITICAL] ";
+        break;
+    case QtFatalMsg:
+        out << "[FATAL] ";
+        break;
+    }
+    out << msg << Qt::endl;
+    out.flush();
+}
 
 int main(int argc, char *argv[])
 {
-    QApplication a(argc, argv);
-    MainWindow w;
+    QApplication app(argc, argv);
+    app.setApplicationName("NetterUI");
+    app.setOrganizationName("Netter");
 
-    QFile file(":/src/client/style.qss");
-    if (!file.open(QFile::ReadOnly)) {
-        std::printf("Error: %s\n", file.errorString().toStdString().c_str());
+    if (logFile.open(QIODevice::WriteOnly | QIODevice::Append)) {
+        qDebug() << "Logging to debug_output.log started.";
+        qInstallMessageHandler(customMessageHandler);
+    } else {
+        qWarning() << "Failed to open log file.";
     }
-    const QString styleSheet = QLatin1String(file.readAll());
-    file.close();
 
-    a.setStyleSheet(styleSheet);
+    // Загружаем настройки (но не применяем их здесь)
+    JsonSettings::instance().load();
+    JsonSettings::instance().debugSettings();
+    
+    // Загрузка стилей
+    QFile styleFile(":src/client/assets/styles/main.qss");
+    if (styleFile.open(QFile::ReadOnly | QFile::Text)) {
+        QTextStream stream(&styleFile);
+        app.setStyleSheet(stream.readAll());
+        styleFile.close();
+    }
+    
+    // Создаем главное окно (настройки будут применены в его конструкторе)
+    MainWindow mainWindow;
+    mainWindow.show();
 
-    w.resize(800, 600);
-    w.show();
-    return a.exec();
+    // Сохраняем настройки при выходе
+    QObject::connect(&app, &QApplication::aboutToQuit, []() {
+        qDebug() << "Приложение завершается, сохранение настроек...";
+        JsonSettings::instance().save();
+    });
+    
+    return app.exec();
 }

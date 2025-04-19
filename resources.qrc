@@ -1,6 +1,16 @@
-<!DOCTYPE RCC>
-<RCC version="1.0">
-    <qresource>
-        <file>src/client/style.qss</file>
+<RCC>
+    <qresource prefix="/">
+        <file>src/client/assets/styles/main.qss</file>
+        <file>src/client/assets/styles/light.qss</file>
+        <file>src/client/assets/styles/dark.qss</file>
+        <file>src/client/assets/icons/app_icon.png</file>
+        <file>src/client/assets/icons/new.png</file>
+        <file>src/client/assets/icons/open.png</file>
+        <file>src/client/assets/icons/save.png</file>
+        <file>src/client/assets/icons/generate.png</file>
+        <file>src/client/assets/icons/settings.png</file>
+        <file>src/client/assets/templates/get_route.rd</file>
+        <file>src/client/assets/templates/post_route.rd</file>
+        <file>src/client/assets/templates/complex_route.rd</file>
     </qresource>
 </RCC>

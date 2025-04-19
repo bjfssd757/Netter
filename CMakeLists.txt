@@ -9,33 +9,52 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Установка каталогов сборки
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
-# Путь к Qt из MSYS2 (если не находит автоматически)
 set(CMAKE_PREFIX_PATH "E:/msys2/ucrt64")
 
-# Найти компоненты Qt
 find_package(QT NAMES Qt6 REQUIRED COMPONENTS Widgets)
 find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets)
 
-# Исходные файлы проекта
 set(PROJECT_SOURCES
     src/client/main.cpp
-    src/client/mainwindow.cpp
-    src/client/headers/mainwindow.h
-    src/client/cli.cpp
+    src/client/ui/mainwindow.cpp
+    src/client/ui/mainwindow.h
+    src/client/ui/components/header.cpp
+    src/client/ui/components/header.h
+    src/client/ui/components/footer.cpp
+    src/client/ui/components/footer.h
+    src/client/ui/components/sidebar.cpp
+    src/client/ui/components/sidebar.h
+    src/client/ui/components/editor.cpp
+    src/client/ui/components/editor.h
+    src/client/ui/components/line_number_area.cpp
+    src/client/ui/components/line_number_area.h
+    src/client/ui/components/template_panel.cpp
+    src/client/ui/components/template_panel.h
+    src/client/ui/dialogs/error_dialog.cpp
+    src/client/ui/dialogs/error_dialog.h
+    src/client/ui/dialogs/settings_dialog.cpp
+    src/client/ui/dialogs/settings_dialog.h
+    src/client/models/route_model.cpp
+    src/client/models/route_model.h
+    src/client/models/template_model.cpp
+    src/client/models/template_model.h
+    src/client/core/cli_interface.cpp
+    src/client/core/cli_interface.h
+    src/client/core/settings_manager.h
+    src/client/core/settings_manager.cpp
+    src/client/utils/file_utils.cpp
+    src/client/utils/file_utils.h
+    src/client/utils/error_handler.cpp
+    src/client/utils/error_handler.h
     resources.qrc
-    src/client/headers/Footer.h
-    src/client/footer.cpp
-    src/client/headers/cli.h
-    src/client/headers/Header.h
-    src/client/header.cpp
 )
 
-# Создание исполняемого файла
+add_definitions(-DQT_MESSAGELOGCONTEXT)
+
 if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
     qt_add_executable(NetterUI
         MANUAL_FINALIZATION
@@ -47,15 +66,11 @@ else()
     )
 endif()
 
-# Линковка библиотек
 target_link_libraries(NetterUI PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
 
-# Специфические флаги для MinGW
 if(MINGW)
-    # Решение проблемы с __imp___argc
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -municode")
     
-    # Добавляем нужные флаги для MinGW
     target_link_options(NetterUI PRIVATE -Wl,--subsystem,windows)
 endif()
 
@@ -63,7 +78,6 @@ set_target_properties(NetterUI PROPERTIES
     WIN32_EXECUTABLE TRUE
 )
 
-# Установка
 include(GNUInstallDirs)
 install(TARGETS NetterUI
     BUNDLE DESTINATION .
@@ -75,7 +89,6 @@ if(QT_VERSION_MAJOR EQUAL 6)
     qt_finalize_executable(NetterUI)
 endif()
 
-# Деплой DLL-файлов для Windows
 if(WIN32)
     add_custom_command(TARGET NetterUI POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E echo "Deploying Qt dependencies..."
