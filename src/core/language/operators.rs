@@ -1,66 +1,57 @@
-#[derive(Debug)]
-pub struct AssignmentStatement {
-    pub variable_name: String,
-    pub expression: Expression,
+use std::fmt;
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum TokenType {
+    Route,              // route
+    Val,                // val
+    Var,                // var
+    If,                 // if
+    Else,               // else
+    String(String),     // "..."
+    Identifier(String), // Идентификаторы
+    HttpMethod(String), // GET, POST ...
+    LBrace,             // {
+    RBrace,             // }
+    LParen,             // (
+    RParen,             // )
+    Semicolon,          // ;
+    Dot,                // .
+    Comma,              // ,
+    Equals,             // =
+    DoubleEquals,       // ==
+    Comment(String),    // Комментарии
+    EOF,                // Конец файла
 }
 
-#[derive(Debug)]
-pub enum Expression {
-    Float(f64),
-    Number(i64),
-    String(String),
-    Boolean(bool),
-    Identifier(String),
-    FunctionCall(FunctionCall),
-    BinaryOperator(BinaryOperatorExpression),
-    UnaryOperator(UnaryOperatorExpression),
-    FieldAccess(FieldAccessExpression),
-    ArrayIndex(ArrayIndexExpression),
+#[derive(Debug, Clone)]
+pub struct Token {
+    pub(crate) token_type: TokenType,
+    pub(crate) line: usize,
+    pub(crate) column: usize,
 }
 
-#[derive(Debug)]
-pub enum Operator {
-    Add,                // +
-    Subtract,           // -
-    Multiply,           // *
-    Divide,             // /
-    Power,              // ^
-    Equals,             // ==
-    NotEquals,          // !=
-    GreaterThan,        // >
-    LessThan,           // <
-    And,                // &&
-    Or,                 // ||
-    Not,                // !
-}
-
-#[derive(Debug)]
-pub struct ArrayIndexExpression {
-    pub target: Box<Expression>,        // Массив
-    pub index: Box<Expression>,         // Индекс
-}
-
-#[derive(Debug)]
-pub struct FieldAccessExpression {
-    pub target: Box<Expression>,    // Объект
-    pub field_name: String,         // Имя поля
-}
-
-#[derive(Debug)]
-pub struct BinaryOperatorExpression {
-    pub operator: Operator, // Тип оператора
-    pub left: Box<Expression>, // Левый операнд
-    pub right: Box<Expression>, // Правый операнд
-}
-
-#[derive(Debug)]
-pub struct UnaryOperatorExpression {
-    pub operator: Operator, // Тип оператора
-    pub expression: Box<Expression>, // Операнд
-}
-
-#[derive(Debug)]
-pub struct FunctionCall {
-    pub function_name: String,
-    pub arguments: Vec<Expression>,
+impl fmt::Display for Token {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match &self.token_type {
+            TokenType::Route => write!(f, "route"),
+            TokenType::Val => write!(f, "val"),
+            TokenType::Var => write!(f, "var"),
+            TokenType::If => write!(f, "if"),
+            TokenType::Else => write!(f, "else"),
+            TokenType::String(s) => write!(f, "\"{}\"", s),
+            TokenType::Identifier(id) => write!(f, "{}", id),
+            TokenType::HttpMethod(method) => write!(f, "{}", method),
+            TokenType::LBrace => write!(f, "{{"),
+            TokenType::RBrace => write!(f, "}}"),
+            TokenType::LParen => write!(f, "("),
+            TokenType::RParen => write!(f, ")"),
+            TokenType::Semicolon => write!(f, ";"),
+            TokenType::Dot => write!(f, "."),
+            TokenType::Comma => write!(f, ","),
+            TokenType::Equals => write!(f, "="),
+            TokenType::DoubleEquals => write!(f, "=="),
+            TokenType::Comment(c) => write!(f, "/* {} */", c),
+            TokenType::EOF => write!(f, "EOF"),
+        }
+    }
 }

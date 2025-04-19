@@ -102,7 +102,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         },
         Some(Commands::Parse { path }) => {
-            
+            commands::start::start_parse(path).await;
             Ok(())
         },
         Some(Commands::Client) => {

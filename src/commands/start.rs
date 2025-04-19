@@ -2,6 +2,7 @@ use crate::core::config_parser::load_config;
 use crate::core::servers::webcosket_core::{Server, WebSocketTrait};
 use crate::core::servers::http_core;
 use crate::core::servers::http_core::HTTP;
+use crate::core::language::parser;
 use std::process::Command;
 use log::{
     info,
@@ -11,10 +12,24 @@ use log::{
     trace
 };
 
-// pub fn start_parse(path: String) {
-//     println!("Go to start parsing");
-//     start(path);
-// }
+pub async fn start_parse(path: String) {
+    trace!("Go to start parsing");
+    let code = std::fs::read_to_string(path)
+        .map_err(|e| error!("Failed to read file: {e}")).unwrap();
+    let ast = parser::parse(&code)
+        .map_err(|e| error!("Failed to parse file: {e}")).unwrap();
+
+    trace!("File parsed successfully!");
+
+    let addr = vec![127, 0, 0, 1];
+    let port = 9090;
+
+    let server = http_core::Server::from_ast(addr, port, &ast)
+        .map_err(|e| error!("Failed to create server: {e}")).unwrap();
+
+    server.start().await
+        .map_err(|e| error!("Failed to start server: {e}")).unwrap();
+}
 
 // pub fn start_client() {
 //     println!("Go to start client");

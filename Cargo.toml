@@ -10,6 +10,7 @@ reepository = "https://github.com/bjfssd757/Netter"
 chrono = "0.4.40"
 clap = { version="4.5.35", features=["derive"] }
 colored = "3.0.0"
+derive_more = { version="2.0.1", features=[ "full" ] }
 diesel = { version = "2.2.9", features = ["postgres"] }
 dotenvy = "0.15.7"
 fern = "0.7.1"
