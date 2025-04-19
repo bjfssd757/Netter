@@ -37,12 +37,30 @@ pub async fn start_parse(path: String) {
 // }
 
 pub fn start_client() {
-    let output = Command::new("netter")
-        .arg("client")
-        .output()
-        .expect("Failed to start client UI");
+    debug!("Creating build directory...");
 
-    trace!("Client output: {:?}", output);
+    Command::new("cmake")
+        .arg("-S")
+        .arg(".")
+        .arg("-B")
+        .arg("build")
+        .arg("-G")
+        .arg("Ninja")
+        .output()
+        .expect("Failed to create build directory client UI");
+
+    debug!("Building...");
+
+    Command::new("cmake")
+        .arg("--build")
+        .arg("build")
+        .output()
+        .expect("Failed to build client UI");
+
+    debug!("Starting client UI...");
+
+    Command::new("build/bin/NetterUI.exe").output()
+        .expect("Failed to start client UI");
 }
 
 pub async fn start_with_config(tcp: bool, udp: bool, websocket: bool, http: bool, path: &String) -> Result<(), Box<dyn std::error::Error>> {

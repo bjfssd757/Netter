@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use commands::start::{start_with_config, start_without_config};
+use commands::start::{self, start_with_config, start_without_config};
 use commands::stop::stop;
 use crate::state::load_state;
 use crate::commands::macros as logger;
@@ -106,7 +106,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Ok(())
         },
         Some(Commands::Client) => {
-            // client::client::start();
+            start::start_client();
             Ok(())
         },
         None => {
