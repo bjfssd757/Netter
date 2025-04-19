@@ -1,3 +1,31 @@
+kind = "HTTP"
 host = "127.0.0.1"
-port = 8083
-protect = false
+port = 8080
+
+[enviroment]
+database_url = "postgres://user:password@localhost/db"
+api_key = "your_api_key"
+
+[cache]
+enable = true
+kind = "redis"
+ttl = 3600
+host = "127.0.0.1"
+port = 6379
+
+[ssl]
+enable = true
+cert_path = "/path/to/cert.pem"
+key_path = "/path/to/key.pem"
+
+[pool]
+max_connection = 10
+min_connection = 2
+
+[logger]
+level = "info"
+file = "/var/log/app.log"
+
+[monitoring]
+enable = true
+endpoint = "http://localhost:9090/monitoring"

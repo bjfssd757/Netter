@@ -1,3 +1,6 @@
 /target
 .env
 SERVER_STATE.json
+/.vscode
+/build
+/logs

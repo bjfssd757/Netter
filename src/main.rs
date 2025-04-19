@@ -1,22 +1,19 @@
-use tokio::net::TcpListener;
-use tokio_tungstenite::accept_async;
-use futures_util::{StreamExt, SinkExt};
-use serde::{Deserialize, Serialize};
 use clap::{Parser, Subcommand};
 use commands::start::{start_with_config, start_without_config};
 use commands::stop::stop;
-use crate::state::{load_state, save_state};
+use crate::state::load_state;
+use crate::commands::macros as logger;
+use log::{
+    info,
+    warn,
+    error,
+    debug,
+    trace
+};
 
 mod commands;
 mod state;
 mod core;
-
-#[allow(async_fn_in_trait)]
-pub trait WebSocketTrait {
-    fn new(host: String, port: u16, protect: bool) -> Self;
-    async fn start(&self) -> Result<(), Box<dyn std::error::Error>>;
-    fn default() -> Self;
-}
 
 #[derive(Parser, Debug)]
 #[command(name = "netter")]
@@ -63,24 +60,34 @@ enum Commands {
         protect: bool,
     },
     Stop,
-}
-
-#[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct Server {
-    host: String,
-    port: u16,
-    protect: bool,
+    Parse {
+        #[arg(long)]
+        path: String,
+    },
+    Client,
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let name: String = logger::generate_name();
+
+    if let Err(e) = logger::init(Some(&name)) {
+        eprintln!("Failed to initialize logger: {}", e);
+        return Err(Box::<dyn std::error::Error>::from(
+            "Failed to initialize logger"));
+    }
+
+    trace!("Logger initialized successfully");
+
     let cli = Cli::parse();
 
     match cli.subcommand {
         Some(Commands::Start { tcp, udp, websocket, http, path, host, port, protect}) => {
             if let Some(path) = path {
+                info!("Starting with conifg: {}", path.clone());
                 start_with_config(tcp, udp, websocket, http, &path).await?;
             } else {
+                info!("Starting without config");
                 start_without_config(tcp, udp, websocket, http, protect, host, port).await?;
             }
             Ok(())
@@ -94,83 +101,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "Server not running"))
             }
         },
+        Some(Commands::Parse { path }) => {
+            commands::start::start_parse(path).await;
+            Ok(())
+        },
+        Some(Commands::Client) => {
+            // client::client::start();
+            Ok(())
+        },
         None => {
             Err(Box::<dyn std::error::Error>::from(
                 "No command provided. Use --help for more information."))
-        }
-    }
-}
-
-impl WebSocketTrait for Server {
-    fn new(host: String, port: u16, protect: bool) -> Self {
-        Self {
-            host,
-            port,
-            protect,
-        }
-    }
-
-    async fn start(&self) -> Result<(), Box<dyn std::error::Error>> {
-        if self.protect {
-            println!("Server is protected");
-            Ok(()) // there should be code for ssl or tls protect
-        }
-        else {
-            println!("Starting server...");
-
-            let addr = format!("{}:{}", self.host, self.port);
-            let listener = TcpListener::bind(&addr)
-                .await
-                .map_err(|e| format!("Failed to bind: {e}"))?;
-
-            save_state(
-                String::from("websocket"),
-                self.host.clone(),
-                self.port.clone()
-            )?;
-
-            println!("Server running on {}", &addr);
-
-            while let Ok((stream, _)) = listener.accept().await {
-                tokio::spawn(async move {
-                    let ws_stream =  match accept_async(stream)
-                        .await {
-                            Ok(ws) => ws,
-                            Err(e) => {
-                                eprintln!("Error during WebSocket handshake: {}", e);
-                                return
-                            }
-                        };
-
-                        println!("New connection!");
-
-                    let (mut write, mut read) = ws_stream.split();
-
-                    while let Some(msg) = read.next().await {
-                        match msg {
-                            Ok(msg) => {
-                                println!("Received message: {}", msg);
-                                if msg.is_text() || msg.is_binary() {
-                                    write.send(msg).await.unwrap();
-                                }
-                            },
-                            Err(e) => {
-                                eprintln!("Failed while reading message: {e}");
-                                return
-                            }
-                        }
-                    }
-                });
-            }
-            Ok(())
-        }
-    }
-
-    fn default() -> Self {
-        Self {
-            host: String::from("127.0.0.1"),
-            port: 8080,
-            protect: false,
         }
     }
 }
