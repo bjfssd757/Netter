@@ -21,6 +21,10 @@ pub enum TokenType {
     DoubleEquals,       // ==
     Comment(String),    // Комментарии
     EOF,                // Конец файла
+    Tls,                // tls
+    Enabled,            // enabled
+    CertPath,           // cert_path
+    KeyPath,            // key_path
 }
 
 #[derive(Debug, Clone)]
@@ -52,6 +56,10 @@ impl fmt::Display for Token {
             TokenType::DoubleEquals => write!(f, "=="),
             TokenType::Comment(c) => write!(f, "/* {} */", c),
             TokenType::EOF => write!(f, "EOF"),
+            TokenType::Tls => write!(f, "tls"),
+            TokenType::Enabled => write!(f, "enabled"),
+            TokenType::CertPath => write!(f, "cert_path"),
+            TokenType::KeyPath => write!(f, "key_path"),
         }
     }
 }

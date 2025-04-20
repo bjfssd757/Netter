@@ -1,9 +1,11 @@
 use crate::core::config_parser::load_config;
+use crate::core::language::interpreter::Interpreter;
 use crate::core::servers::webcosket_core::{Server, WebSocketTrait};
 use crate::core::servers::http_core;
 use crate::core::servers::http_core::HTTP;
 use crate::core::language::parser;
 use std::process::Command;
+use diesel::IntoSql;
 use log::{
     info,
     warn,
@@ -12,34 +14,51 @@ use log::{
     trace
 };
 
-pub async fn start_parse(path: String) {
+pub async fn start_parse(path: String) -> Result<(), Box<dyn std::error::Error>> {
     trace!("Go to start parsing");
     let code = std::fs::read_to_string(path)
         .map_err(|e| error!("Failed to read file: {e}")).unwrap();
     let ast = parser::parse(&code)
         .map_err(|e| error!("Failed to parse file: {e}")).unwrap();
+    let mut interpreter = Interpreter::new();
+    if let Err(e) = interpreter.interpret(&ast) {
+        error!("Failed to interpret AST: {}", e);
+    }
 
     trace!("File parsed successfully!");
 
     let addr = vec![127, 0, 0, 1];
     let port = 9090;
 
-    let server = http_core::Server::from_ast(addr, port, &ast)
-        .map_err(|e| error!("Failed to create server: {e}")).unwrap();
+    info!("Creating server on {}:{} with TLS: {}", 
+        addr.iter().map(|n| n.to_string()).collect::<Vec<_>>().join("."),
+        port,
+        if interpreter.tls_config.is_some() { "enabled" } else { "disabled" }
+    );
+
+    let server = if let Some(tls_config) = interpreter.tls_config.clone() {
+        info!("Starting HTTPS server with TLS enabled");
+        if !tls_config.enabled {
+            info!("TLS configuration found but disabled, using HTTP");
+        }
+        http_core::Server::from_interpreter(addr, port, interpreter, Some(tls_config))
+    } else {
+        info!("No TLS configuration found, using HTTP");
+        http_core::Server::from_interpreter(addr, port, interpreter, None)
+    };
+
+    info!("Starting server...");
 
     server.start().await
         .map_err(|e| error!("Failed to start server: {e}")).unwrap();
+
+    Ok(())
 }
 
-// pub fn start_client() {
-//     println!("Go to start client");
-//     client::start();
-// }
-
-pub fn start_client() {
+pub fn start_client() -> Result<(), Box<dyn std::error::Error>> {
     debug!("Creating build directory...");
 
-    Command::new("cmake")
+    let output = Command::new("cmake")
         .arg("-S")
         .arg(".")
         .arg("-B")
@@ -48,6 +67,14 @@ pub fn start_client() {
         .arg("Ninja")
         .output()
         .expect("Failed to create build directory client UI");
+
+    if !output.stdout.is_empty() {
+        println!("{}", std::str::from_utf8(&output.stdout)?);
+    }
+
+    if !output.stderr.is_empty() {
+        eprintln!("{}", std::str::from_utf8(&output.stderr)?);
+    }
 
     debug!("Building...");
 
@@ -59,12 +86,14 @@ pub fn start_client() {
 
     debug!("Starting client UI...");
 
-    Command::new("build/bin/NetterUI.exe").output()
+    Command::new("build/run_netter_ui.bat").spawn()
         .expect("Failed to start client UI");
+
+    Ok(())
 }
 
 pub async fn start_with_config(tcp: bool, udp: bool, websocket: bool, http: bool, path: &String) -> Result<(), Box<dyn std::error::Error>> {
-    println!("Start with params:");
+    trace!("Start with params:");
     if tcp {
         info!("TCP: true");
     }
@@ -105,7 +134,7 @@ pub async fn start_with_config(tcp: bool, udp: bool, websocket: bool, http: bool
 }
 
 pub async fn start_without_config(tcp: bool, udp: bool, websocket: bool, http: bool, protect: bool, host: Option<String>, port: Option<u16>) -> Result<(), Box<dyn std::error::Error>> {
-    println!("Start without config:");
+    trace!("Start without config:");
 
     match &host {
         Some(host) => {

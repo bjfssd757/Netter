@@ -205,11 +205,16 @@ impl Lexer {
                         "val" => Ok(Token { token_type: TokenType::Val, line, column }),
                         "if" => Ok(Token { token_type: TokenType::If, line, column }),
                         "else" => Ok(Token { token_type: TokenType::Else, line, column }),
+                        "tls" => Ok(Token { token_type: TokenType::Tls, line, column }),
+                        "enabled" => Ok(Token { token_type: TokenType::Enabled, line, column }),
+                        "cert_path" => Ok(Token { token_type: TokenType::CertPath, line, column }),
+                        "key_path" => Ok(Token { token_type: TokenType::KeyPath, line, column }),
                         "GET" | "POST" | "PUT" | "DELETE" | "PATCH" | "HEAD" | "OPTIONS" => 
                             Ok(Token { token_type: TokenType::HttpMethod(ident), line, column }),
                         _ => Ok(Token { token_type: TokenType::Identifier(ident), line, column }),
                     }
                 },
+
                 _ => Err(format!("Неизвестный символ: '{}', строка {} колонка {}", ch, line, column)),
             }
         } else {
@@ -273,6 +278,15 @@ pub enum AstNode {
         operator: String,
         right: Box<AstNode>,
     },
+    TlsConfig {
+        enabled: bool,
+        cert_path: String,
+        key_path: String,
+    },
+    ServerConfig {
+        routes: Vec<Box<AstNode>>,
+        tls_config: Option<Box<AstNode>>,
+    },
 }
 
 impl fmt::Display for AstNode {
@@ -321,6 +335,23 @@ impl fmt::Display for AstNode {
             AstNode::Identifier(name) => write!(f, "{}", name),
             AstNode::BinaryOp { left, operator, right } => {
                 write!(f, "{} {} {}", left, operator, right)
+            },
+            AstNode::TlsConfig { enabled, cert_path, key_path } => {
+                writeln!(f, "TLS Configuration: {{")?;
+                writeln!(f, "  enabled: {}", enabled)?;
+                writeln!(f, "  cert_path: \"{}\"", cert_path)?;
+                writeln!(f, "  key_path: \"{}\"", key_path)?;
+                writeln!(f, "}}")
+            },
+            AstNode::ServerConfig { routes, tls_config } => {
+                writeln!(f, "Server Configuration: {{")?;
+                if let Some(tls) = tls_config {
+                    writeln!(f, "  {}", tls)?;
+                }
+                for route in routes {
+                    writeln!(f, "  {}", route)?;
+                }
+                writeln!(f, "}}")
             },
         }
     }

@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::fmt;
-use log::{error, trace, warn};
+use log::{error, trace, warn, debug};
+use crate::core::servers::http_core::TlsConfig;
 
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
@@ -379,12 +380,14 @@ impl RouteHandler {
 #[derive(Debug)]
 pub struct Interpreter {
     pub routes: HashMap<String, (String, RouteHandler)>,
+    pub tls_config: Option<TlsConfig>,
 }
 
 impl Interpreter {
     pub fn new() -> Self {
         Interpreter {
             routes: HashMap::new(),
+            tls_config: None,
         }
     }
     
@@ -400,6 +403,33 @@ impl Interpreter {
                             return Err(e);
                         }
                     }
+                }
+                Ok(())
+            },
+            crate::core::language::lexer::AstNode::ServerConfig { routes, tls_config } => {
+                // Обрабатываем TLS конфигурацию
+                if let Some(tls) = tls_config {
+                    match &**tls {
+                        crate::core::language::lexer::AstNode::TlsConfig { enabled, cert_path, key_path } => {
+                            if *enabled {
+                                self.tls_config = Some(TlsConfig {
+                                    enabled: *enabled,
+                                    cert_path: cert_path.clone(),
+                                    key_path: key_path.clone(),
+                                });
+                                debug!("Включен TLS с сертификатами: cert={}, key={}", cert_path, key_path);
+                            } else {
+                                self.tls_config = None;
+                                debug!("TLS отключен");
+                            }
+                        },
+                        _ => return Err("Ожидается TLS конфигурация".to_string()),
+                    }
+                }
+                
+                // Обрабатываем все маршруты
+                for route in routes {
+                    self.interpret(route)?;
                 }
                 Ok(())
             },
@@ -430,7 +460,7 @@ impl Interpreter {
             },
             _ => {
                 warn!("Неожиданный тип узла в interpret: {:?}", ast);
-                Err("Ожидается программа или маршрут на верхнем уровне".to_string())
+                Err("Ожидается программа, ServerConfig или маршрут на верхнем уровне".to_string())
             },
         }
     }
@@ -607,6 +637,7 @@ impl Clone for Interpreter {
         
         Interpreter {
             routes: new_routes,
+            tls_config: self.tls_config.clone(),
         }
     }
 }
@@ -643,6 +674,14 @@ pub fn handle_request(interpreter: &Interpreter, method: &str, path: &str, param
                         }
                         
                         handler.execute(&mut request, &mut response);
+
+                        if !response.headers.contains_key("Content-Type") {
+                            response.headers.insert(
+                                "Content-Type".to_string(),
+                                "text/html; charset=utf-8".to_string(),
+                            );
+                        }
+
                         return response;
                     }
                 }
@@ -655,5 +694,9 @@ pub fn handle_request(interpreter: &Interpreter, method: &str, path: &str, param
     
     response.status = 404;
     response.body("Not Found").send();
+    response.headers.insert(
+        "Content-Type".to_string(),
+        "text/html; charset=utf-8".to_string(),
+    );
     response
 }

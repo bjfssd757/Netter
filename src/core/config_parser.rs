@@ -9,10 +9,11 @@ use crate::core::config::{
 };
 use std::fs;
 use toml;
-
 use super::config::RouteConfig;
+use crate::core::servers::http_core::TlsConfig;
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
+#[allow(dead_code)]
 pub struct Config {
     pub kind: String,
     pub host: String,
@@ -25,6 +26,7 @@ pub struct Config {
     pub logger: Logger,
     pub monitoring: MonitoringConfigure,
     pub routes: Vec<RouteConfig>,
+    pub tls: Option<TlsConfig>
 }
 
 pub fn load_config(path: &str) -> Result<Config, Box<dyn std::error::Error>> {

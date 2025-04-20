@@ -1,5 +1,6 @@
 use std::process::Command;
 use crate::state::delete_file;
+use log::info;
 
 pub async fn stop(pid: u32) -> Result<(), Box<dyn std::error::Error>> {
     if cfg!(target_os = "windows") {
@@ -11,7 +12,7 @@ pub async fn stop(pid: u32) -> Result<(), Box<dyn std::error::Error>> {
         if output.status.success() {
             delete_file()?;
             
-            println!("Process stopped successfully");
+            info!("Process stopped successfully");
             Ok(())
         } else {
             Err(Box::<dyn std::error::Error>::from(
@@ -27,7 +28,7 @@ pub async fn stop(pid: u32) -> Result<(), Box<dyn std::error::Error>> {
         if output.status.success() {
             delete_file()?;
 
-            println!("Process with PID {} stopped successfully.", pid);
+            info!("Process with PID {} stopped successfully.", pid);
             Ok(())
         } else {
             Err(Box::<dyn std::error::Error>::from(

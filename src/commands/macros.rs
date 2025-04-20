@@ -1,6 +1,6 @@
 use chrono::Local;
 use colored::*;
-use log::{Level, LevelFilter};
+use log::{Level, LevelFilter, trace};
 
 const LOGS_DIRECTORY: &str = "Logs";
 const LOGS_PREFIX: &str = "netter_log";
@@ -12,7 +12,6 @@ pub fn generate_name() -> String {
     let now = Local::now();
     let timestamp = now.format(FORMAT).to_string();
     
-    // Формируем путь к файлу
     format!(
         "{}/{}{}{}.{}",
         LOGS_DIRECTORY,
@@ -26,20 +25,22 @@ pub fn generate_name() -> String {
 fn ensure_log_directory_exists() -> std::io::Result<()> {
     let log_dir = std::path::Path::new(LOGS_DIRECTORY);
     if !log_dir.exists() {
-        println!("Директория логов '{}' не существует, создаём...", LOGS_DIRECTORY);
+        trace!("Директория логов '{}' не существует, создаём...", LOGS_DIRECTORY);
         std::fs::create_dir_all(log_dir)?;
-        println!("Директория логов успешно создана");
+        trace!("Директория логов успешно создана");
     }
     Ok(())
 }
 
 pub fn init(log_file: Option<&str>) -> Result<(), fern::InitError> {
-    ensure_log_directory_exists().map_err(|e| {
-        fern::InitError::Io(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("Не удалось создать директорию для логов: {}", e),
-        ))
-    })?;
+    if let Some(_) = log_file.clone() {
+        ensure_log_directory_exists().map_err(|e| {
+            fern::InitError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Не удалось создать директорию для логов: {}", e),
+            ))
+        })?;
+    }
 
     let console_dispatch = fern::Dispatch::new()
         .format(|out, message, record| {

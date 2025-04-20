@@ -5,3 +5,4 @@ SERVER_STATE.json
 /build
 /logs
 *.log
+/tls

@@ -28,12 +28,87 @@ impl Parser {
 
     pub fn parse(&mut self) -> Result<AstNode, String> {
         let mut statements = Vec::new();
-
+        let mut tls_config = None;
+        
         while !self.is_at_end() {
-            statements.push(Box::new(self.route()?));
+            if self.check(&TokenType::Tls) {
+                if tls_config.is_some() {
+                    return Err("Дублирование TLS конфигурации".to_string());
+                }
+                tls_config = Some(Box::new(self.tls_config()?));
+            } else if self.check(&TokenType::Route) {
+                statements.push(Box::new(self.route()?));
+            } else {
+                return Err(format!("Ожидается 'route' или 'tls', получено: {:?}", self.peek().token_type));
+            }
         }
+        
+        if tls_config.is_some() {
+            Ok(AstNode::ServerConfig {
+                routes: statements,
+                tls_config,
+            })
+        } else {
+            Ok(AstNode::Program(statements))
+        }
+    }
 
-        Ok(AstNode::Program(statements))
+    fn tls_config(&mut self) -> Result<AstNode, String> {
+        self.consume(&TokenType::Tls, "Ожидается ключевое слово 'tls'")?;
+        self.consume(&TokenType::LBrace, "Ожидается '{' после 'tls'")?;
+        
+        let mut enabled = false;
+        let mut cert_path = String::new();
+        let mut key_path = String::new();
+        
+        while !self.check(&TokenType::RBrace) && !self.is_at_end() {
+            if self.match_token(&TokenType::Enabled) {
+                self.consume(&TokenType::Equals, "Ожидается '=' после 'enabled'")?;
+                if self.match_token(&TokenType::Identifier(String::new())) {
+                    let value = match &self.previous().token_type {
+                        TokenType::Identifier(v) => v.clone(),
+                        _ => return Err("Ожидается bool значение для enabled".to_string()),
+                    };
+                    enabled = value == "true";
+                } else {
+                    return Err("Ожидается булево значение (true/false) для enabled".to_string());
+                }
+                self.consume(&TokenType::Semicolon, "Ожидается ';' после значения")?;
+            } else if self.match_token(&TokenType::CertPath) {
+                self.consume(&TokenType::Equals, "Ожидается '=' после 'cert_path'")?;
+                if self.match_token(&TokenType::String(String::new())) {
+                    cert_path = match &self.previous().token_type {
+                        TokenType::String(v) => v.clone(),
+                        _ => return Err("Ожидается строка для cert_path".to_string()),
+                    };
+                } else {
+                    return Err("Ожидается строковое значение для cert_path".to_string());
+                }
+                self.consume(&TokenType::Semicolon, "Ожидается ';' после значения")?;
+            } else if self.match_token(&TokenType::KeyPath) {
+                self.consume(&TokenType::Equals, "Ожидается '=' после 'key_path'")?;
+                if self.match_token(&TokenType::String(String::new())) {
+                    key_path = match &self.previous().token_type {
+                        TokenType::String(v) => v.clone(),
+                        _ => return Err("Ожидается строка для key_path".to_string()),
+                    };
+                } else {
+                    return Err("Ожидается строковое значение для key_path".to_string());
+                }
+                self.consume(&TokenType::Semicolon, "Ожидается ';' после значения")?;
+            } else {
+                return Err(format!("Неизвестный ключ в TLS конфигурации: {:?}", self.peek().token_type));
+            }
+        }
+        
+        self.consume(&TokenType::RBrace, "Ожидается '}' после TLS конфигурации")?;
+        self.consume(&TokenType::Semicolon, "Ожидается ';' после блока TLS конфигурации")?;
+        
+        Ok(AstNode::TlsConfig {
+            enabled,
+            cert_path,
+            key_path,
+        })
     }
 
     fn is_at_end(&self) -> bool {

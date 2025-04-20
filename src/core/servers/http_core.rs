@@ -1,11 +1,18 @@
 use http_body_util::{combinators::BoxBody, BodyExt, Empty, Full};
 use hyper::{body::{self, Bytes}, header::{HeaderName, HeaderValue}, server::conn::http1, service::service_fn, Request, Response, StatusCode};
-use log::{debug, trace, error};
+use log::{debug, trace, error, info};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::str::FromStr;
 use derive_more::Debug;
+use std::fs::File;
+use std::io::BufReader;
+use rustls::ServerConfig;
+use rustls_pemfile::{certs, pkcs8_private_keys};
+use tokio::net::TcpListener;
+use tokio_rustls::TlsAcceptor;
+use hyper_util::rt::TokioIo;
 use crate::{core::{config_parser::load_config, language::{interpreter::Interpreter, lexer::AstNode}}, state};
 
 #[derive(Debug)]
@@ -29,6 +36,15 @@ pub struct Server {
     routes: Vec<Routes>,
     #[debug(skip)]
     interpreter: Option<Arc<Mutex<Interpreter>>>,
+    tls_config: Option<TlsConfig>,
+    rustls_config: Option<Arc<ServerConfig>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TlsConfig {
+    pub(crate) enabled: bool,
+    pub(crate) cert_path: String,
+    pub(crate) key_path: String,
 }
 
 #[allow(dead_code)]
@@ -37,12 +53,13 @@ pub trait HTTP {
     async fn start(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct Config {
-    host: String,
-    port: u16,
-    routes: Vec<RouteConfig>,
-}
+// #[derive(Serialize, Deserialize)]
+// pub struct ConfigHttp {
+//     host: String,
+//     port: u16,
+//     routes: Vec<RouteConfig>,
+//     tls: Option<TlsConfig>,
+// }
 
 #[derive(Serialize, Deserialize)]
 pub struct RouteConfig {
@@ -74,6 +91,23 @@ impl Server {
             },
         }).collect();
 
+        let tls_config = config.tls;
+        let rustls_config = if let Some(tls) = &tls_config {
+            if tls.enabled {
+                match load_rustls_config(&tls.cert_path, &tls.key_path) {
+                    Ok(config) => Some(Arc::new(config)),
+                    Err(e) => {
+                        error!("Failed to load TLS configuration: {}", e);
+                        None
+                    }
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         Ok(Server {
             addr: config.host.split('.')
                 .map(|s| s.parse::<u16>().unwrap_or(127))
@@ -81,32 +115,116 @@ impl Server {
             port: config.port,
             routes,
             interpreter: None,
+            tls_config,
+            rustls_config,
         })
     }
 
     pub fn from_interpreter(
         addr: Vec<u16>, 
         port: u16, 
-        interpreter: Interpreter
+        interpreter: Interpreter,
+        tls_config: Option<TlsConfig>,
     ) -> Self {
+        let rustls_config = if let Some(tls) = &tls_config {
+            if tls.enabled {
+                match load_rustls_config(&tls.cert_path, &tls.key_path) {
+                    Ok(config) => Some(Arc::new(config)),
+                    Err(e) => {
+                        error!("Failed to load TLS configuration: {}", e);
+                        None
+                    }
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         Server {
             addr,
             port,
             routes: Vec::new(),
             interpreter: Some(Arc::new(Mutex::new(interpreter))),
+            tls_config,
+            rustls_config,
         }
     }
 
     pub fn from_ast(
         addr: Vec<u16>, 
         port: u16, 
-        ast: &AstNode
+        ast: &AstNode,
+        tls_config: Option<TlsConfig>,
     ) -> Result<Self, String> {
         let mut interpreter = Interpreter::new();
         interpreter.interpret(ast)?;
         
-        Ok(Server::from_interpreter(addr, port, interpreter))
+        Ok(Server::from_interpreter(addr, port, interpreter, tls_config))
     }
+
+    pub fn enable_tls(&mut self, cert_path: String, key_path: String) -> Result<(), Box<dyn std::error::Error>> {
+        let tls_config = TlsConfig {
+            enabled: true,
+            cert_path: cert_path.clone(),
+            key_path: key_path.clone(),
+        };
+
+        let rustls_config = load_rustls_config(&cert_path, &key_path)?;
+        
+        self.tls_config = Some(tls_config);
+        self.rustls_config = Some(Arc::new(rustls_config));
+        
+        Ok(())
+    }
+
+    pub fn disable_tls(&mut self) {
+        if let Some(tls_config) = &mut self.tls_config {
+            tls_config.enabled = false;
+        }
+        self.rustls_config = None;
+    }
+
+    pub fn is_tls_enabled(&self) -> bool {
+        self.tls_config.as_ref().map_or(false, |c| c.enabled) && self.rustls_config.is_some()
+    }
+}
+
+fn load_rustls_config(cert_path: &str, key_path: &str) -> Result<ServerConfig, Box<dyn std::error::Error>> {
+    let cert_file = File::open(cert_path)?;
+    let mut cert_reader = BufReader::new(cert_file);
+
+    let mut cert_chain = Vec::new();
+    for cert_result in certs(&mut cert_reader) {
+        let cert = cert_result?;
+        cert_chain.push(cert.to_owned());
+    }
+
+    if cert_chain.is_empty() {
+        return Err("No certificates found".into());
+    }
+
+    let key_file = File::open(key_path)?;
+    let mut key_reader = BufReader::new(key_file);
+
+    let mut keys = Vec::new();
+    for key_result in pkcs8_private_keys(&mut key_reader) {
+        let key = key_result?;
+        keys.push(key.into());
+    }
+    
+    if keys.is_empty() {
+        return Err("No private keys found".into());
+    }
+    
+    let private_key = keys.remove(0);
+
+    let config = ServerConfig::builder()
+        .with_no_client_auth()
+        .with_single_cert(cert_chain, private_key)?;
+    
+    Ok(config)
 }
 
 async fn handler(
@@ -169,43 +287,82 @@ impl HTTP for Server {
             port,
             routes: vec![routes],
             interpreter: None,
+            tls_config: None,
+            rustls_config: None,
         }
     }
 
     async fn start(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let addr = format!(
-            "{}:{}",
-            self.addr.iter().map(|n| n.to_string()).collect::<Vec<_>>().join("."),
-            self.port
-        );
-        let listener = tokio::net::TcpListener::bind(&addr).await?;
-        trace!("Server started on {}", addr);
-
-        state::save_state(String::from("HTTP"), 
-            self.addr.clone().iter().map(|n| n.to_string()).collect::<Vec<_>>().join("."), 
-            self.port)
+        let addr_str = self.addr.iter().map(|n| n.to_string()).collect::<Vec<_>>().join(".");
+        let addr = format!("{}:{}", addr_str, self.port);
+        
+        let protocol = if self.is_tls_enabled() { "HTTPS" } else { "HTTP" };
+        state::save_state(String::from(protocol), addr_str.clone(), self.port)
             .map_err(|_| "Failed to save state")?;
 
         let server_state = Arc::new(Mutex::new(self.clone()));
         state::load_state();
 
-        loop {
-            let (socket, _) = listener.accept().await?;
-            let io = hyper_util::rt::TokioIo::new(socket);
+        let listener = TcpListener::bind(&addr).await?;
+        
+        info!("Server starting at {}", addr);
+
+        if self.is_tls_enabled() {
+            info!("Starting HTTPS server on {}", addr);
             
-            let server_clone = server_state.clone();
-            
-            tokio::task::spawn(async move {
-                if let Err(err) = http1::Builder::new()
-                    .serve_connection(io, service_fn(move |req| {
-                        let server_clone = server_clone.clone();
-                        async move { handler(req, server_clone).await }
-                    }))
-                    .await
-                {
-                    error!("Error serving connection: {}", err);
-                }
-            });
+            let tls_config = self.rustls_config.clone()
+                .ok_or("TLS is enabled but configuration is missing")?;
+                
+            let tls_acceptor = TlsAcceptor::from(tls_config);
+            trace!("HTTPS server started on {}", addr);
+
+            loop {
+                let (tcp_stream, _) = listener.accept().await?;
+                let acceptor = tls_acceptor.clone();
+                let server_clone = server_state.clone();
+                
+                tokio::task::spawn(async move {
+                    match acceptor.accept(tcp_stream).await {
+                        Ok(tls_stream) => {
+                            let io = TokioIo::new(tls_stream);
+                            
+                            if let Err(err) = http1::Builder::new()
+                                .serve_connection(io, service_fn(move |req| {
+                                    let server_clone = server_clone.clone();
+                                    async move { handler(req, server_clone).await }
+                                }))
+                                .await
+                            {
+                                error!("Error serving TLS connection: {}", err);
+                            }
+                        },
+                        Err(err) => {
+                            error!("TLS handshake failed: {}", err);
+                        }
+                    }
+                });
+            }
+        } else {
+            info!("Starting HTTP server on {}", addr);
+
+            loop {
+                let (tcp_stream, _) = listener.accept().await?;
+                let io = TokioIo::new(tcp_stream);
+                
+                let server_clone = server_state.clone();
+                
+                tokio::task::spawn(async move {
+                    if let Err(err) = http1::Builder::new()
+                        .serve_connection(io, service_fn(move |req| {
+                            let server_clone = server_clone.clone();
+                            async move { handler(req, server_clone).await }
+                        }))
+                        .await
+                    {
+                        error!("Error serving connection: {}", err);
+                    }
+                });
+            }
         }
     }
 }
@@ -217,6 +374,8 @@ impl Clone for Server {
             port: self.port,
             routes: self.routes.clone(),
             interpreter: self.interpreter.clone(),
+            tls_config: self.tls_config.clone(),
+            rustls_config: self.rustls_config.clone(),
         }
     }
 }
