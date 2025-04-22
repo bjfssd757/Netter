@@ -1,215 +1,260 @@
-name: Build and Release
+name: Build Release Binaries
 
 on:
   push:
     tags:
-      - 'v*'
-  workflow_dispatch:
-    inputs:
-      release:
-        description: 'Create a release'
-        required: false
-        default: false
-        type: boolean
+      - 'v*'  # Запускается при создании тега, начинающегося с 'v'
 
 jobs:
-  build_rust_cli:
-    name: Build Rust CLI
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        include:
-          - os: ubuntu-latest
-            artifact_name: cli-linux
-            asset_name: cli-linux-amd64
-          - os: windows-latest
-            artifact_name: cli-windows.exe
-            asset_name: cli-windows-amd64
-          - os: macos-latest
-            artifact_name: cli-macos
-            asset_name: cli-macos-amd64
-
-    steps:
-      - uses: actions/checkout@v3
-      
-      - name: Set up Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
-      
-      - name: Cache Rust dependencies
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-      
-      - name: Build CLI
-        run: cargo build --release
-        working-directory: ./cli
-      
-      - name: Rename binary
-        shell: bash
-        run: |
-          if [ "${{ matrix.os }}" == "windows-latest" ]; then
-            cp target/release/netter.exe ./${{ matrix.artifact_name }}
-          else
-            cp target/release/netter ./${{ matrix.artifact_name }}
-          fi
-        working-directory: ./cli
-      
-      - name: Upload CLI artifact
-        uses: actions/upload-artifact@v3
-        with:
-          name: ${{ matrix.asset_name }}
-          path: ./cli/${{ matrix.artifact_name }}
-          if-no-files-found: error
-
-  build_qt_gui:
-    name: Build Qt GUI
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        qt_version: ['6.5.0']
-        include:
-          - os: ubuntu-latest
-            artifact_name: gui-linux
-            asset_name: gui-linux-amd64
-          - os: windows-latest
-            artifact_name: gui-windows
-            asset_name: gui-windows-amd64
-          - os: macos-latest
-            artifact_name: gui-macos
-            asset_name: gui-macos-amd64
-
-    steps:
-      - uses: actions/checkout@v3
-      
-      - name: Install Qt
-        uses: jurplel/install-qt-action@v3
-        with:
-          version: ${{ matrix.qt_version }}
-          host: ${{ matrix.os }}
-          target: desktop
-          arch: gcc_64
-          install-deps: true
-          
-      - name: Create build directory
-        run: mkdir build
-        working-directory: ./gui
-      
-      - name: Configure CMake (Linux/macOS)
-        if: matrix.os != 'windows-latest'
-        run: cmake .. -DCMAKE_BUILD_TYPE=Release
-        working-directory: ./gui/build
-        
-      - name: Configure CMake (Windows)
-        if: matrix.os == 'windows-latest'
-        run: cmake .. -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release
-        working-directory: ./gui/build
-        
-      - name: Build GUI
-        run: cmake --build . --config Release
-        working-directory: ./gui/build
-      
-      - name: Deploy Qt dependencies (Linux)
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          mkdir -p deploy/${{ matrix.artifact_name }}
-          cp build/netterui deploy/${{ matrix.artifact_name }}/
-          ${{ env.Qt6_DIR }}/bin/windeployqt deploy/${{ matrix.artifact_name }}/your_gui_name
-        working-directory: ./gui
-        
-      - name: Deploy Qt dependencies (Windows)
-        if: matrix.os == 'windows-latest'
-        run: |
-          mkdir -p deploy/${{ matrix.artifact_name }}
-          cp build/Release/netterui.exe deploy/${{ matrix.artifact_name }}/
-          ${{ env.Qt6_DIR }}/bin/windeployqt deploy/${{ matrix.artifact_name }}/your_gui_name.exe
-        working-directory: ./gui
-        
-      - name: Deploy Qt dependencies (macOS)
-        if: matrix.os == 'macos-latest'
-        run: |
-          mkdir -p deploy/${{ matrix.artifact_name }}
-          cp -R build/netterui.app deploy/${{ matrix.artifact_name }}/
-          ${{ env.Qt6_DIR }}/bin/macdeployqt deploy/${{ matrix.artifact_name }}/your_gui_name.app -dmg
-        working-directory: ./gui
-      
-      - name: Upload GUI artifact
-        uses: actions/upload-artifact@v3
-        with:
-          name: ${{ matrix.asset_name }}
-          path: ./gui/deploy/${{ matrix.artifact_name }}
-          if-no-files-found: error
-
-  test:
-    name: Run Tests
-    needs: [build_rust_cli, build_qt_gui]
-    runs-on: ubuntu-latest
-    
-    steps:
-      - uses: actions/checkout@v3
-      
-      - name: Set up Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
-      
-      - name: Download artifacts
-        uses: actions/download-artifact@v3
-        with:
-          path: ./artifacts
-      
-      - name: Run CLI tests
-        run: cargo test
-        working-directory: ./cli
-
-  release:
+  create-release:
     name: Create Release
-    needs: test
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.release == 'true'
-    
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+      version: ${{ steps.get_version.outputs.version }}
     steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v3
-        with:
-          path: ./artifacts
-      
-      - name: Create archives
-        run: |
-          cd ./artifacts
-          for dir in */; do
-            platform=${dir%/}
-            if [[ "$platform" == *"windows"* ]]; then
-              7z a -tzip "${platform}.zip" "./${platform}/"*
-            else
-              tar -czvf "${platform}.tar.gz" -C "./${platform}" .
-            fi
-          done
+      - name: Get Version
+        id: get_version
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
       
       - name: Create Release
         id: create_release
-        uses: softprops/action-gh-release@v1
-        with:
-          files: |
-            ./artifacts/*.zip
-            ./artifacts/*.tar.gz
-          draft: true
-          prerelease: false
-          generate_release_notes: true
+        uses: actions/create-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: NetterUI ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+
+  build-windows:
+    name: Build Windows
+    needs: create-release
+    runs-on: windows-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Set up Qt
+        uses: jurplel/install-qt-action@v3
+        with:
+          version: '6.5.0'
+          host: 'windows'
+          target: 'desktop'
+          arch: 'win64_msvc2019_64'
+          install-deps: 'true'
+      
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          target: x86_64-pc-windows-msvc
+      
+      - name: Install MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+      
+      - name: Build Rust Backend
+        run: |
+          cargo build --release
+      
+      - name: Build Qt UI with CMake
+        run: |
+          mkdir build
+          cd build
+          cmake -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release ..
+          cmake --build . --config Release
+      
+      - name: Create Portable Package
+        run: |
+          mkdir -p NetterUI-Windows-Portable/bin
+          Copy-Item "target/release/netter.exe" -Destination "NetterUI-Windows-Portable/bin/"
+          Copy-Item "build/bin/Release/NetterUI.exe" -Destination "NetterUI-Windows-Portable/bin/"
+          Copy-Item "build/bin/Release/*.dll" -Destination "NetterUI-Windows-Portable/bin/"
+          
+          Set-Content -Path "NetterUI-Windows-Portable/NetterUI.bat" -Value "@echo off`r`ncd bin`r`nstart NetterUI.exe`r`n"
+          
+          Set-Content -Path "NetterUI-Windows-Portable/README.txt" -Value "NetterUI v${{ needs.create-release.outputs.version }}`r`n`r`nTo start the application, run NetterUI.bat`r`n"
+          
+          Compress-Archive -Path "NetterUI-Windows-Portable/*" -DestinationPath "NetterUI-Windows-Portable.zip"
+      
+      - name: Create Installer
+        run: |
+          cd build
+          cpack -G NSIS -C Release
+      
+      - name: Upload Portable Package
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: ./NetterUI-Windows-Portable.zip
+          asset_name: NetterUI-${{ needs.create-release.outputs.version }}-Windows-Portable.zip
+          asset_content_type: application/zip
+      
+      - name: Upload Installer
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: ./build/NetterUI-${{ needs.create-release.outputs.version }}-win64.exe
+          asset_name: NetterUI-${{ needs.create-release.outputs.version }}-Windows-Installer.exe
+          asset_content_type: application/octet-stream
+
+  build-linux:
+    name: Build Linux
+    needs: create-release
+    runs-on: ubuntu-20.04
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libgl1-mesa-dev libpq-dev
+          sudo apt-get install -y qt6-base-dev libqt6widgets6 libqt6gui6 libqt6core6
+      
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+      
+      - name: Build Rust Backend
+        run: |
+          cargo build --release
+      
+      - name: Build Qt UI (Direct Compilation)
+        run: |
+          mkdir -p linux_bin
+          
+          find src/client -name "*.cpp" > cpp_files.txt
+          
+          g++ -o linux_bin/NetterUI $(cat cpp_files.txt) -std=c++17 -O2 $(pkg-config --cflags --libs Qt6Widgets)
+      
+      - name: Create AppImage
+        run: |
+          sudo apt-get install -y libfuse2
+          wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          wget -q https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
+          chmod +x linuxdeploy*.AppImage
+          
+          mkdir -p AppDir/usr/bin AppDir/usr/share/applications AppDir/usr/share/icons/hicolor/256x256/apps
+          
+          cp target/release/netter AppDir/usr/bin/
+          cp linux_bin/NetterUI AppDir/usr/bin/
+          
+          cat > AppDir/usr/share/applications/netterui.desktop << EOF
+          [Desktop Entry]
+          Name=NetterUI
+          Exec=NetterUI
+          Icon=netterui
+          Type=Application
+          Categories=Development;Network;
+          Comment=Netter - tool for easily starting web servers
+          EOF
+          
+          ./linuxdeploy-x86_64.AppImage --appdir=AppDir --executable=AppDir/usr/bin/NetterUI
+          ./linuxdeploy-plugin-qt-x86_64.AppImage --appdir=AppDir
+          ./linuxdeploy-x86_64.AppImage --appdir=AppDir --output appimage
+      
+      - name: Create Portable Package
+        run: |
+          mkdir -p NetterUI-Linux-Portable/bin
+          cp target/release/netter NetterUI-Linux-Portable/bin/
+          cp linux_bin/NetterUI NetterUI-Linux-Portable/bin/
+          
+          cat > NetterUI-Linux-Portable/run_netterui.sh << EOF
+          #!/bin/bash
+          cd "\$(dirname "\$0")/bin"
+          ./NetterUI
+          EOF
+          
+          chmod +x NetterUI-Linux-Portable/run_netterui.sh
+          
+          cat > NetterUI-Linux-Portable/README.txt << EOF
+          NetterUI v${{ needs.create-release.outputs.version }}
+          
+          To start the application, run ./run_netterui.sh
+          
+          Dependencies:
+          - Qt6 (libqt6widgets6, libqt6gui6, libqt6core6)
+          - PostgreSQL client (libpq5)
+          EOF
+          
+          tar -czf NetterUI-Linux-Portable.tar.gz -C NetterUI-Linux-Portable .
+      
+      - name: Create DEB Package
+        run: |
+          # Install packaging tools
+          sudo apt-get install -y dpkg-dev
+          
+          mkdir -p netterui_pkg/DEBIAN
+          mkdir -p netterui_pkg/usr/bin
+          mkdir -p netterui_pkg/usr/share/applications
+          mkdir -p netterui_pkg/usr/share/icons/hicolor/256x256/apps
+          
+          cp target/release/netter netterui_pkg/usr/bin/
+          cp linux_bin/NetterUI netterui_pkg/usr/bin/
+          
+          cat > netterui_pkg/usr/share/applications/netterui.desktop << EOF
+          [Desktop Entry]
+          Name=NetterUI
+          Exec=/usr/bin/NetterUI
+          Icon=netterui
+          Type=Application
+          Categories=Development;Network;
+          Comment=Netter - tool for easily starting web servers
+          EOF
+          
+          cat > netterui_pkg/DEBIAN/control << EOF
+          Package: netterui
+          Version: ${{ needs.create-release.outputs.version }}
+          Section: devel
+          Priority: optional
+          Architecture: amd64
+          Depends: libqt6widgets6, libqt6gui6, libqt6core6, libpq5
+          Maintainer: NetterUI Team
+          Description: Netter - tool for easily starting web servers
+           NetterUI provides a graphical interface for managing web servers.
+          EOF
+          
+          # Build DEB package
+          dpkg-deb --build netterui_pkg
+          mv netterui_pkg.deb netterui_${{ needs.create-release.outputs.version }}_amd64.deb
+      
+      - name: Upload AppImage
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: ./NetterUI-*.AppImage
+          asset_name: NetterUI-${{ needs.create-release.outputs.version }}-x86_64.AppImage
+          asset_content_type: application/octet-stream
+      
+      - name: Upload Portable Package
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: ./NetterUI-Linux-Portable.tar.gz
+          asset_name: NetterUI-${{ needs.create-release.outputs.version }}-Linux-Portable.tar.gz
+          asset_content_type: application/gzip
+      
+      - name: Upload DEB Package
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: ./netterui_${{ needs.create-release.outputs.version }}_amd64.deb
+          asset_name: netterui_${{ needs.create-release.outputs.version }}_amd64.deb
+          asset_content_type: application/octet-stream
