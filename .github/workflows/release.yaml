@@ -1,0 +1,58 @@
+name: Create Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Extract version from tag
+        id: tag
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+      
+      - name: Download artifacts from build workflow
+        uses: dawidd6/action-download-artifact@v2
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          workflow: build.yml
+          workflow_conclusion: success
+          branch: ${{ github.ref_name }}
+          path: artifacts
+          
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.ref }}
+          name: Release ${{ steps.tag.outputs.VERSION }}
+          draft: false
+          prerelease: false
+          files: |
+            artifacts/netter-full-package-windows/netter-full-package-windows.zip
+            artifacts/netter-cli-windows-latest/netter-windows.zip
+            artifacts/netter-cli-ubuntu-latest/netter-linux.tar.gz
+            artifacts/netter-gui-windows/NetterUI-windows.zip
+          body: |
+            # Netter ${{ steps.tag.outputs.VERSION }}
+            
+            ## What's Changed
+            
+            * See the [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details.
+            
+            ## Downloads
+            
+            * **Full Package (Windows)**: Includes both CLI and GUI
+            * **CLI Only**:
+              * Windows
+              * Linux
+            * **GUI Only** (Windows)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
