@@ -54,17 +54,17 @@ jobs:
       
       - name: Build CLI
         run: cargo build --release
-        working-directory: ./cli  # Путь к директории с CLI проектом
+        working-directory: ./cli
       
       - name: Rename binary
         shell: bash
         run: |
           if [ "${{ matrix.os }}" == "windows-latest" ]; then
-            cp target/release/your_cli_name.exe ./${{ matrix.artifact_name }}
+            cp target/release/netter.exe ./${{ matrix.artifact_name }}
           else
-            cp target/release/your_cli_name ./${{ matrix.artifact_name }}
+            cp target/release/netter ./${{ matrix.artifact_name }}
           fi
-        working-directory: ./cli  # Путь к директории с CLI проектом
+        working-directory: ./cli
       
       - name: Upload CLI artifact
         uses: actions/upload-artifact@v3
@@ -106,7 +106,7 @@ jobs:
           
       - name: Create build directory
         run: mkdir build
-        working-directory: ./gui  # Путь к директории с GUI проектом
+        working-directory: ./gui
       
       - name: Configure CMake (Linux/macOS)
         if: matrix.os != 'windows-latest'
@@ -126,7 +126,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           mkdir -p deploy/${{ matrix.artifact_name }}
-          cp build/your_gui_name deploy/${{ matrix.artifact_name }}/
+          cp build/netterui deploy/${{ matrix.artifact_name }}/
           ${{ env.Qt6_DIR }}/bin/windeployqt deploy/${{ matrix.artifact_name }}/your_gui_name
         working-directory: ./gui
         
@@ -134,7 +134,7 @@ jobs:
         if: matrix.os == 'windows-latest'
         run: |
           mkdir -p deploy/${{ matrix.artifact_name }}
-          cp build/Release/your_gui_name.exe deploy/${{ matrix.artifact_name }}/
+          cp build/Release/netterui.exe deploy/${{ matrix.artifact_name }}/
           ${{ env.Qt6_DIR }}/bin/windeployqt deploy/${{ matrix.artifact_name }}/your_gui_name.exe
         working-directory: ./gui
         
@@ -142,7 +142,7 @@ jobs:
         if: matrix.os == 'macos-latest'
         run: |
           mkdir -p deploy/${{ matrix.artifact_name }}
-          cp -R build/your_gui_name.app deploy/${{ matrix.artifact_name }}/
+          cp -R build/netterui.app deploy/${{ matrix.artifact_name }}/
           ${{ env.Qt6_DIR }}/bin/macdeployqt deploy/${{ matrix.artifact_name }}/your_gui_name.app -dmg
         working-directory: ./gui
       
@@ -176,8 +176,6 @@ jobs:
       - name: Run CLI tests
         run: cargo test
         working-directory: ./cli
-      
-      # Добавьте здесь тесты для GUI, если необходимо
 
   release:
     name: Create Release
@@ -193,7 +191,6 @@ jobs:
       
       - name: Create archives
         run: |
-          # Создаем архивы для каждой платформы
           cd ./artifacts
           for dir in */; do
             platform=${dir%/}
