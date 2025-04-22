@@ -77,7 +77,7 @@ jobs:
         cd ..
     
     - name: Upload binary as artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: netter-cli-${{ matrix.os }}
         path: ${{ matrix.asset_name }}
@@ -147,7 +147,7 @@ jobs:
         7z a -tzip ../NetterUI-windows.zip NetterUI
     
     - name: Upload Qt GUI artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: netter-gui-windows
         path: NetterUI-windows.zip
@@ -159,7 +159,7 @@ jobs:
     
     steps:
     - name: Download all artifacts
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         path: artifacts
     
@@ -188,7 +188,7 @@ jobs:
         7z a netter-full-package-windows.zip netter-full-package/*
     
     - name: Upload full package
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: netter-full-package-windows
         path: netter-full-package-windows.zip
