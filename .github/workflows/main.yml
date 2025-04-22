@@ -75,17 +75,13 @@ jobs:
             mingw-w64-ucrt-x86_64-cmake
             mingw-w64-ucrt-x86_64-ninja
             mingw-w64-ucrt-x86_64-nsis
-      
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          target: x86_64-pc-windows-gnu
+            mingw-w64-ucrt-x86_64-rust
       
       - name: Build Rust Backend
-        shell: pwsh
+        shell: msys2 {0}
         run: |
-          $env:PATH = "C:\msys64\ucrt64\bin;$env:PATH"
-          cargo build --release --target x86_64-pc-windows-gnu
+          export PATH="/ucrt64/bin:$PATH"
+          cargo build --release
       
       - name: Build Qt UI with CMake
         shell: msys2 {0}
@@ -101,12 +97,7 @@ jobs:
         run: |
           mkdir -p NetterUI-Windows-Portable/bin
           
-          Copy-Item "target/x86_64-pc-windows-gnu/release/netter.exe" -Destination "NetterUI-Windows-Portable/bin/" -ErrorAction SilentlyContinue
-          
-          if (-not (Test-Path "NetterUI-Windows-Portable/bin/netter.exe")) {
-            Copy-Item "target/release/netter.exe" -Destination "NetterUI-Windows-Portable/bin/" -ErrorAction SilentlyContinue
-          }
-          
+          Copy-Item "target/release/netter.exe" -Destination "NetterUI-Windows-Portable/bin/" -ErrorAction SilentlyContinue
           Copy-Item "build/bin/NetterUI.exe" -Destination "NetterUI-Windows-Portable/bin/" -ErrorAction SilentlyContinue
           
           $msys2_bin = "C:/msys64/ucrt64/bin"
