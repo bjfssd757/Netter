@@ -16,7 +16,7 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: build gui
-      run: /
+      run: |
         apt-get upgrade
         apt install cmake
         apt install ninja-build
@@ -26,3 +26,15 @@ jobs:
         cd build
         cmake -S .. -G "Ninja"
         cmake --build .
+    - name: Install dependencies
+      run: |
+       apt-get update
+       apt-get upgrade -y
+       sudo apt-get install -y postgresql postgresql-contrib libpq-dev
+    - name: Build
+      run: |
+        mkdir build
+        cd build
+        cmake -S .. -G "Ninja"
+        cmake --build .
+       
