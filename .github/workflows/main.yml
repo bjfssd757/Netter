@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: '0.3.2'
+        description: 'Версия релиза (без "v" в начале)'
         required: true
         default: '0.3.2'
 
@@ -28,19 +28,32 @@ jobs:
           
       - name: Get Version
         id: get_version
-        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+          fi
       
       - name: Create Release
         id: create_release
         run: |
-          gh release create ${{ github.ref_name }} \
-            --title "NetterUI ${{ github.ref_name }}" \
-            --generate-notes
+          VERSION=${{ steps.get_version.outputs.version }}
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG_NAME="v$VERSION"
+            if ! gh release view "$TAG_NAME" &>/dev/null; then
+              gh release create "$TAG_NAME" --title "NetterUI $TAG_NAME" --generate-notes
+            else
+              echo "Release $TAG_NAME already exists"
+            fi
+          else
+            gh release create ${{ github.ref_name }} --title "NetterUI ${{ github.ref_name }}" --generate-notes
+          fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build-windows:
-    name: Build Windows
+    name: Build Windows (MSYS2 UCRT64)
     needs: create-release
     runs-on: windows-latest
     
@@ -48,56 +61,113 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       
-      - name: Set up Qt
-        uses: jurplel/install-qt-action@v3
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
         with:
-          version: '6.5.0'
-          host: 'windows'
-          target: 'desktop'
-          arch: 'win64_msvc2019_64'
-          install-deps: 'true'
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-qt6-base
+            mingw-w64-ucrt-x86_64-qt6-tools
+            mingw-w64-ucrt-x86_64-qt6-svg
+            mingw-w64-ucrt-x86_64-postgresql
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-nsis
       
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          target: x86_64-pc-windows-msvc
-      
-      - name: Install MSVC
-        uses: ilammy/msvc-dev-cmd@v1
+          target: x86_64-pc-windows-gnu
       
       - name: Build Rust Backend
+        shell: msys2 {0}
         run: |
-          cargo build --release
+          export PATH="/ucrt64/bin:$PATH"
+          cargo build --release --target x86_64-pc-windows-gnu
       
       - name: Build Qt UI with CMake
+        shell: msys2 {0}
         run: |
-          mkdir build
+          export PATH="/ucrt64/bin:$PATH"
+          mkdir -p build
           cd build
-          cmake -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release ..
-          cmake --build . --config Release
+          cmake -G "Ninja" -DCMAKE_BUILD_TYPE=Release ..
+          cmake --build .
       
       - name: Create Portable Package
+        shell: pwsh
         run: |
           mkdir -p NetterUI-Windows-Portable/bin
-          Copy-Item "target/release/netter.exe" -Destination "NetterUI-Windows-Portable/bin/"
-          Copy-Item "build/bin/Release/NetterUI.exe" -Destination "NetterUI-Windows-Portable/bin/"
-          Copy-Item "build/bin/Release/*.dll" -Destination "NetterUI-Windows-Portable/bin/" -ErrorAction SilentlyContinue
           
-          Set-Content -Path "NetterUI-Windows-Portable/NetterUI.bat" -Value "@echo off`r`ncd bin`r`nstart NetterUI.exe`r`n"
+          Copy-Item "target/x86_64-pc-windows-gnu/release/netter.exe" -Destination "NetterUI-Windows-Portable/bin/" -ErrorAction SilentlyContinue
+          
+          if (-not (Test-Path "NetterUI-Windows-Portable/bin/netter.exe")) {
+            Copy-Item "target/release/netter.exe" -Destination "NetterUI-Windows-Portable/bin/" -ErrorAction SilentlyContinue
+          }
+          
+          Copy-Item "build/bin/NetterUI.exe" -Destination "NetterUI-Windows-Portable/bin/" -ErrorAction SilentlyContinue
+          
+          $msys2_bin = "C:/msys64/ucrt64/bin"
+          
+          Copy-Item "$msys2_bin/libpq.dll" -Destination "NetterUI-Windows-Portable/bin/"
+          Copy-Item "$msys2_bin/libcrypto*.dll" -Destination "NetterUI-Windows-Portable/bin/"
+          Copy-Item "$msys2_bin/libssl*.dll" -Destination "NetterUI-Windows-Portable/bin/"
+          
+          Copy-Item "$msys2_bin/libgcc_s_seh-1.dll" -Destination "NetterUI-Windows-Portable/bin/"
+          Copy-Item "$msys2_bin/libstdc++-6.dll" -Destination "NetterUI-Windows-Portable/bin/"
+          Copy-Item "$msys2_bin/libwinpthread-1.dll" -Destination "NetterUI-Windows-Portable/bin/"
+          
+          foreach ($lib in @("zlib1.dll", "libbz2-1.dll", "libpng16-16.dll", "libharfbuzz-0.dll", "libfreetype-6.dll", "libiconv-2.dll")) {
+              if (Test-Path "$msys2_bin/$lib") {
+                  Copy-Item "$msys2_bin/$lib" -Destination "NetterUI-Windows-Portable/bin/"
+              }
+          }
+          
+          Copy-Item "$msys2_bin/Qt6Core.dll" -Destination "NetterUI-Windows-Portable/bin/"
+          Copy-Item "$msys2_bin/Qt6Gui.dll" -Destination "NetterUI-Windows-Portable/bin/"
+          Copy-Item "$msys2_bin/Qt6Widgets.dll" -Destination "NetterUI-Windows-Portable/bin/"
+          
+          mkdir -p NetterUI-Windows-Portable/bin/platforms NetterUI-Windows-Portable/bin/styles NetterUI-Windows-Portable/bin/imageformats
+          
+          $qtPluginsDir = "C:/msys64/ucrt64/share/qt6/plugins"
+          if (Test-Path "$qtPluginsDir/platforms/qwindows.dll") {
+              Copy-Item "$qtPluginsDir/platforms/qwindows.dll" -Destination "NetterUI-Windows-Portable/bin/platforms/"
+          }
+          
+          if (Test-Path "$qtPluginsDir/styles/qwindowsvistastyle.dll") {
+              Copy-Item "$qtPluginsDir/styles/qwindowsvistastyle.dll" -Destination "NetterUI-Windows-Portable/bin/styles/"
+          }
+          
+          foreach ($format in @("qgif", "qico", "qjpeg", "qsvg")) {
+              if (Test-Path "$qtPluginsDir/imageformats/$format.dll") {
+                  Copy-Item "$qtPluginsDir/imageformats/$format.dll" -Destination "NetterUI-Windows-Portable/bin/imageformats/"
+              }
+          }
+          
+          Set-Content -Path "NetterUI-Windows-Portable/NetterUI.bat" -Value "@echo off`r`nchcp 65001 > nul`r`ncd /d `"%~dp0bin`"`r`nNetterUI.exe`r`n"
           
           Set-Content -Path "NetterUI-Windows-Portable/README.txt" -Value "NetterUI v${{ needs.create-release.outputs.version }}`r`n`r`nTo start the application, run NetterUI.bat`r`n"
           
           Compress-Archive -Path "NetterUI-Windows-Portable/*" -DestinationPath "NetterUI-Windows-Portable.zip"
       
-      - name: Create Installer
+      - name: Create Installer with CPack
+        shell: msys2 {0}
         run: |
           cd build
           cpack -G NSIS -C Release
       
       - name: Upload Artifacts
+        shell: pwsh
         run: |
-          gh release upload ${{ github.ref_name }} NetterUI-Windows-Portable.zip --clobber
-          gh release upload ${{ github.ref_name }} build/NetterUI-${{ needs.create-release.outputs.version }}-win64.exe --clobber
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            $tag_name = "v${{ github.event.inputs.version }}"
+          } else {
+            $tag_name = "${{ github.ref_name }}"
+          }
+          gh release upload $tag_name NetterUI-Windows-Portable.zip --clobber
+          gh release upload $tag_name build/NetterUI-*.exe --clobber
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -222,8 +292,13 @@ jobs:
       
       - name: Upload Artifacts
         run: |
-          gh release upload ${{ github.ref_name }} NetterUI-*.AppImage --clobber
-          gh release upload ${{ github.ref_name }} NetterUI-Linux-Portable.tar.gz --clobber
-          gh release upload ${{ github.ref_name }} netterui_${{ needs.create-release.outputs.version }}_amd64.deb --clobber
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            tag_name="v${{ github.event.inputs.version }}"
+          else
+            tag_name="${{ github.ref_name }}"
+          fi
+          gh release upload $tag_name NetterUI-*.AppImage --clobber
+          gh release upload $tag_name NetterUI-Linux-Portable.tar.gz --clobber
+          gh release upload $tag_name netterui_${{ needs.create-release.outputs.version }}_amd64.deb --clobber
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
