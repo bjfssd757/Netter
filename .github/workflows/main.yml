@@ -3,30 +3,35 @@ name: Build Release Binaries
 on:
   push:
     tags:
-      - 'v*'  # Запускается при создании тега, начинающегося с 'v'
+      - 'v*'
+
+permissions:
+  contents: write
 
 jobs:
   create-release:
     name: Create Release
     runs-on: ubuntu-latest
     outputs:
-      upload_url: ${{ steps.create_release.outputs.upload_url }}
       version: ${{ steps.get_version.outputs.version }}
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
       - name: Get Version
         id: get_version
         run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
       
       - name: Create Release
         id: create_release
-        uses: actions/create-release@v1
+        run: |
+          gh release create ${{ github.ref_name }} \
+            --title "NetterUI ${{ github.ref_name }}" \
+            --generate-notes
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ github.ref }}
-          release_name: NetterUI ${{ github.ref_name }}
-          draft: false
-          prerelease: false
 
   build-windows:
     name: Build Windows
@@ -35,7 +40,7 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       
       - name: Set up Qt
         uses: jurplel/install-qt-action@v3
@@ -47,10 +52,8 @@ jobs:
           install-deps: 'true'
       
       - name: Install Rust
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
-          override: true
           target: x86_64-pc-windows-msvc
       
       - name: Install MSVC
@@ -72,7 +75,7 @@ jobs:
           mkdir -p NetterUI-Windows-Portable/bin
           Copy-Item "target/release/netter.exe" -Destination "NetterUI-Windows-Portable/bin/"
           Copy-Item "build/bin/Release/NetterUI.exe" -Destination "NetterUI-Windows-Portable/bin/"
-          Copy-Item "build/bin/Release/*.dll" -Destination "NetterUI-Windows-Portable/bin/"
+          Copy-Item "build/bin/Release/*.dll" -Destination "NetterUI-Windows-Portable/bin/" -ErrorAction SilentlyContinue
           
           Set-Content -Path "NetterUI-Windows-Portable/NetterUI.bat" -Value "@echo off`r`ncd bin`r`nstart NetterUI.exe`r`n"
           
@@ -85,25 +88,12 @@ jobs:
           cd build
           cpack -G NSIS -C Release
       
-      - name: Upload Portable Package
-        uses: actions/upload-release-asset@v1
+      - name: Upload Artifacts
+        run: |
+          gh release upload ${{ github.ref_name }} NetterUI-Windows-Portable.zip --clobber
+          gh release upload ${{ github.ref_name }} build/NetterUI-${{ needs.create-release.outputs.version }}-win64.exe --clobber
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.create-release.outputs.upload_url }}
-          asset_path: ./NetterUI-Windows-Portable.zip
-          asset_name: NetterUI-${{ needs.create-release.outputs.version }}-Windows-Portable.zip
-          asset_content_type: application/zip
-      
-      - name: Upload Installer
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.create-release.outputs.upload_url }}
-          asset_path: ./build/NetterUI-${{ needs.create-release.outputs.version }}-win64.exe
-          asset_name: NetterUI-${{ needs.create-release.outputs.version }}-Windows-Installer.exe
-          asset_content_type: application/octet-stream
 
   build-linux:
     name: Build Linux
@@ -112,7 +102,7 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       
       - name: Install Dependencies
         run: |
@@ -121,10 +111,7 @@ jobs:
           sudo apt-get install -y qt6-base-dev libqt6widgets6 libqt6gui6 libqt6core6
       
       - name: Install Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          override: true
+        uses: dtolnay/rust-toolchain@stable
       
       - name: Build Rust Backend
         run: |
@@ -188,11 +175,10 @@ jobs:
           - PostgreSQL client (libpq5)
           EOF
           
-          tar -czf NetterUI-Linux-Portable.tar.gz -C NetterUI-Linux-Portable .
+          tar -czf NetterUI-Linux-Portable.tar.gz NetterUI-Linux-Portable
       
       - name: Create DEB Package
         run: |
-          # Install packaging tools
           sudo apt-get install -y dpkg-dev
           
           mkdir -p netterui_pkg/DEBIAN
@@ -225,36 +211,13 @@ jobs:
            NetterUI provides a graphical interface for managing web servers.
           EOF
           
-          # Build DEB package
           dpkg-deb --build netterui_pkg
           mv netterui_pkg.deb netterui_${{ needs.create-release.outputs.version }}_amd64.deb
       
-      - name: Upload AppImage
-        uses: actions/upload-release-asset@v1
+      - name: Upload Artifacts
+        run: |
+          gh release upload ${{ github.ref_name }} NetterUI-*.AppImage --clobber
+          gh release upload ${{ github.ref_name }} NetterUI-Linux-Portable.tar.gz --clobber
+          gh release upload ${{ github.ref_name }} netterui_${{ needs.create-release.outputs.version }}_amd64.deb --clobber
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.create-release.outputs.upload_url }}
-          asset_path: ./NetterUI-*.AppImage
-          asset_name: NetterUI-${{ needs.create-release.outputs.version }}-x86_64.AppImage
-          asset_content_type: application/octet-stream
-      
-      - name: Upload Portable Package
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.create-release.outputs.upload_url }}
-          asset_path: ./NetterUI-Linux-Portable.tar.gz
-          asset_name: NetterUI-${{ needs.create-release.outputs.version }}-Linux-Portable.tar.gz
-          asset_content_type: application/gzip
-      
-      - name: Upload DEB Package
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.create-release.outputs.upload_url }}
-          asset_path: ./netterui_${{ needs.create-release.outputs.version }}_amd64.deb
-          asset_name: netterui_${{ needs.create-release.outputs.version }}_amd64.deb
-          asset_content_type: application/octet-stream
