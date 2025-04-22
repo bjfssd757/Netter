@@ -10,23 +10,41 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
-    name: build cli
+  build-linux:
+    name: build cli linux
 
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest]
+    runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v4
+    - name: Install dependencies
+      run: |
+        apt-get upgrade
+        apt update
+        apt install postgresql postgresql-contrib libpq-dev
+
     - name: Build
       run: cargo build --release -v
+
+  build-windows:
+    name: build cli windows
+
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install PgSQL
+      run: |
+        choco install postgresql --version=16 --params '/Password:postgres' -y
+        setx PATH "%PATH%;C:\Program Files\PostgreSQL\16\bin"
+    - name: Build CLI
+      run: cargo build --release -v
+        
 
   test:
     name: test cli
 
-    needs: build
+    needs: [build-linux, build-windows]
 
     runs-on: ${{ matrix.os }}
     strategy:
