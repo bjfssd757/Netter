@@ -40,7 +40,26 @@ jobs:
         toolchain: ${{ env.RUST_VERSION }}
         target: ${{ matrix.target }}
         override: true
-
+    
+    # Установка PostgreSQL для Windows
+    - name: Install PostgreSQL (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        choco install postgresql -y
+        echo "C:\Program Files\PostgreSQL\16\lib" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+        echo "C:\Program Files\PostgreSQL\16\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+        echo "PQ_LIB_DIR=C:\Program Files\PostgreSQL\16\lib" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        # Workaround для Rust и PostgreSQL
+        mkdir -p C:\Libraries\PostgreSQL\
+        xcopy "C:\Program Files\PostgreSQL\16" "C:\Libraries\PostgreSQL\" /E /I /H /Y
+      
+    # Установка PostgreSQL для Linux
+    - name: Install PostgreSQL (Linux)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y postgresql postgresql-contrib libpq-dev
+    
     - name: Cache Rust dependencies
       uses: actions/cache@v3
       with:
@@ -89,59 +108,43 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
-    - name: Set up MSYS2
-      uses: msys2/setup-msys2@v2
+    # Используем официальный Qt вместо MSYS2 для упрощения
+    - name: Install Qt
+      uses: jurplel/install-qt-action@v3
       with:
-        msystem: UCRT64
-        update: true
-        install: >-
-          mingw-w64-ucrt-x86_64-gcc
-          mingw-w64-ucrt-x86_64-cmake
-          mingw-w64-ucrt-x86_64-make
-          mingw-w64-ucrt-x86_64-qt6-base
-          mingw-w64-ucrt-x86_64-qt6-tools
-          mingw-w64-ucrt-x86_64-qt6-declarative
-          mingw-w64-ucrt-x86_64-qt6-svg
+        version: '6.5.3'
+        host: 'windows'
+        target: 'desktop'
+        arch: 'win64_msvc2019_64'
+        modules: 'qtwebsockets qtcharts qtsvg'
+    
+    - name: Set up Visual Studio environment
+      uses: ilammy/msvc-dev-cmd@v1
     
     - name: Create build directory
-      shell: msys2 {0}
-      run: |
-        mkdir -p build
-        cd build
-        echo "Build directory created"
+      run: mkdir build
     
     - name: Configure CMake
-      shell: msys2 {0}
+      working-directory: build
       run: |
-        cd build
-        cmake -G "MSYS Makefiles" .. \
-          -DCMAKE_BUILD_TYPE=Release \
-          -DMSYS2_INSTALL_DIR=/ucrt64
+        cmake .. -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release
     
     - name: Build
-      shell: msys2 {0}
-      run: |
-        cd build
-        make -j$(nproc)
+      working-directory: build
+      run: cmake --build . --config Release
     
     - name: Create deployment package
-      shell: msys2 {0}
       run: |
         mkdir -p packages/NetterUI
-        cp build/bin/NetterUI.exe packages/NetterUI/
-        cp build/run_netter_ui.bat packages/NetterUI/
+        cp build/bin/Release/NetterUI.exe packages/NetterUI/ || cp build/bin/NetterUI.exe packages/NetterUI/
         
-        # Copy all DLLs from build/bin to packages/NetterUI
-        cp -r build/bin/*.dll packages/NetterUI/
+        # Развертывание Qt зависимостей
+        windeployqt packages/NetterUI/NetterUI.exe --release
         
-        # Copy platform plugins
-        mkdir -p packages/NetterUI/platforms
-        mkdir -p packages/NetterUI/styles
-        mkdir -p packages/NetterUI/imageformats
-        
-        cp -r build/bin/platforms/* packages/NetterUI/platforms/ || true
-        cp -r build/bin/styles/* packages/NetterUI/styles/ || true
-        cp -r build/bin/imageformats/* packages/NetterUI/imageformats/ || true
+        # Создание bat-файла для запуска
+        echo "@echo off" > packages/NetterUI/run_netter_ui.bat
+        echo "chcp 65001 > nul" >> packages/NetterUI/run_netter_ui.bat
+        echo "NetterUI.exe" >> packages/NetterUI/run_netter_ui.bat
         
         cd packages
         7z a -tzip ../NetterUI-windows.zip NetterUI
