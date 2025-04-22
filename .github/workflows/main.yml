@@ -1,328 +1,206 @@
-name: Build Release Binaries
+name: Build Netter
 
 on:
   push:
+    branches: [ main, master ]
     tags:
       - 'v*'
+  pull_request:
+    branches: [ main, master ]
   workflow_dispatch:
-    inputs:
-      version:
-        description: 'Версия релиза (без "v" в начале)'
-        required: true
-        default: '0.3.2'
 
-permissions:
-  contents: write
+env:
+  CARGO_TERM_COLOR: always
+  RUST_VERSION: stable
 
 jobs:
-  create-release:
-    name: Create Release
-    runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.get_version.outputs.version }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          
-      - name: Get Version
-        id: get_version
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
-          else
-            echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
-          fi
-      
-      - name: Create Release
-        id: create_release
-        run: |
-          VERSION=${{ steps.get_version.outputs.version }}
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            TAG_NAME="v$VERSION"
-            if ! gh release view "$TAG_NAME" &>/dev/null; then
-              gh release create "$TAG_NAME" --title "NetterUI $TAG_NAME" --generate-notes
-            else
-              echo "Release $TAG_NAME already exists"
-            fi
-          else
-            gh release create ${{ github.ref_name }} --title "NetterUI ${{ github.ref_name }}" --generate-notes
-          fi
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  build-rust-cli:
+    name: Build Rust CLI
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            binary_name: netter.exe
+            asset_name: netter-windows.zip
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            binary_name: netter
+            asset_name: netter-linux.tar.gz
 
-  build-windows:
-    name: Build Windows (PowerShell + MSYS2)
-    needs: create-release
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain: ${{ env.RUST_VERSION }}
+        target: ${{ matrix.target }}
+        override: true
+
+    - name: Cache Rust dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-
+    
+    - name: Build CLI
+      run: cargo build --release
+    
+    - name: Run tests
+      run: cargo test --release
+    
+    - name: Package CLI binary (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        mkdir -p release
+        cp target/release/${{ matrix.binary_name }} release/
+        cd release
+        7z a ../${{ matrix.asset_name }} ${{ matrix.binary_name }}
+        cd ..
+    
+    - name: Package CLI binary (Linux)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        mkdir -p release
+        cp target/release/${{ matrix.binary_name }} release/
+        cd release
+        tar -czf ../${{ matrix.asset_name }} ${{ matrix.binary_name }}
+        cd ..
+    
+    - name: Upload binary as artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: netter-cli-${{ matrix.os }}
+        path: ${{ matrix.asset_name }}
+
+  build-qt-gui:
+    name: Build Qt GUI
     runs-on: windows-latest
     
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
-      - name: Setup MSYS2
-        uses: msys2/setup-msys2@v2
-        with:
-          msystem: UCRT64
-          update: true
-          install: >-
-            mingw-w64-ucrt-x86_64-gcc
-            mingw-w64-ucrt-x86_64-qt6-base
-            mingw-w64-ucrt-x86_64-qt6-tools
-            mingw-w64-ucrt-x86_64-qt6-svg
-            mingw-w64-ucrt-x86_64-postgresql
-            mingw-w64-ucrt-x86_64-cmake
-            mingw-w64-ucrt-x86_64-ninja
-            mingw-w64-ucrt-x86_64-nasm
-            mingw-w64-ucrt-x86_64-nsis
-      
-      - name: Install Rust (windows-gnu)
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          target: x86_64-pc-windows-gnu
-      
-      - name: Build Rust Backend
-        shell: pwsh
-        run: |
-          # Настраиваем пути и переменные для MSYS2/UCRT64
-          $env:PATH = "C:\msys64\ucrt64\bin;C:\msys64\usr\bin;$env:PATH"
-          $env:LIBPQ_DIR = "C:\msys64\ucrt64"
-          
-          # Отключаем использование ASM в aws-lc-sys
-          $env:AWS_LC_SYS_NO_ASM = "1"
-          
-          # Подробный вывод для отладки
-          Write-Host "PATH: $env:PATH"
-          Write-Host "LIBPQ_DIR: $env:LIBPQ_DIR"
-          Write-Host "AWS_LC_SYS_NO_ASM: $env:AWS_LC_SYS_NO_ASM"
-          Write-Host "NASM executable: $(where.exe nasm)"
-          
-          # Собираем с явным указанием цели для windows-gnu
-          cargo build --release --target x86_64-pc-windows-gnu -v
-      
-      - name: Build Qt UI with CMake
-        shell: msys2 {0}
-        run: |
-          export PATH="/ucrt64/bin:$PATH"
-          mkdir -p build
-          cd build
-          cmake -G "Ninja" -DCMAKE_BUILD_TYPE=Release ..
-          cmake --build .
-      
-      - name: Create Portable Package
-        shell: pwsh
-        run: |
-          mkdir -p NetterUI-Windows-Portable/bin
-          
-          # Копируем Rust backend
-          Copy-Item "target/x86_64-pc-windows-gnu/release/netter.exe" -Destination "NetterUI-Windows-Portable/bin/" -ErrorAction SilentlyContinue
-          
-          # Копируем Qt frontend
-          Copy-Item "build/bin/NetterUI.exe" -Destination "NetterUI-Windows-Portable/bin/" -ErrorAction SilentlyContinue
-          
-          $msys2_bin = "C:/msys64/ucrt64/bin"
-          
-          # PostgreSQL библиотеки
-          Copy-Item "$msys2_bin/libpq.dll" -Destination "NetterUI-Windows-Portable/bin/"
-          Copy-Item "$msys2_bin/libcrypto*.dll" -Destination "NetterUI-Windows-Portable/bin/" -ErrorAction SilentlyContinue
-          Copy-Item "$msys2_bin/libssl*.dll" -Destination "NetterUI-Windows-Portable/bin/" -ErrorAction SilentlyContinue
-          
-          # MinGW Runtime
-          Copy-Item "$msys2_bin/libgcc_s_seh-1.dll" -Destination "NetterUI-Windows-Portable/bin/"
-          Copy-Item "$msys2_bin/libstdc++-6.dll" -Destination "NetterUI-Windows-Portable/bin/"
-          Copy-Item "$msys2_bin/libwinpthread-1.dll" -Destination "NetterUI-Windows-Portable/bin/"
-          
-          # Дополнительные библиотеки из CMakeLists.txt
-          foreach ($lib in @("zlib1.dll", "libbz2-1.dll", "libpng16-16.dll", "libharfbuzz-0.dll", "libfreetype-6.dll", "libiconv-2.dll")) {
-              if (Test-Path "$msys2_bin/$lib") {
-                  Copy-Item "$msys2_bin/$lib" -Destination "NetterUI-Windows-Portable/bin/"
-              }
-          }
-          
-          # Qt библиотеки
-          Copy-Item "$msys2_bin/Qt6Core.dll" -Destination "NetterUI-Windows-Portable/bin/"
-          Copy-Item "$msys2_bin/Qt6Gui.dll" -Destination "NetterUI-Windows-Portable/bin/"
-          Copy-Item "$msys2_bin/Qt6Widgets.dll" -Destination "NetterUI-Windows-Portable/bin/"
-          
-          # Qt плагины
-          mkdir -p NetterUI-Windows-Portable/bin/platforms NetterUI-Windows-Portable/bin/styles NetterUI-Windows-Portable/bin/imageformats
-          
-          $qtPluginsDir = "C:/msys64/ucrt64/share/qt6/plugins"
-          if (Test-Path "$qtPluginsDir/platforms/qwindows.dll") {
-              Copy-Item "$qtPluginsDir/platforms/qwindows.dll" -Destination "NetterUI-Windows-Portable/bin/platforms/"
-          }
-          
-          if (Test-Path "$qtPluginsDir/styles/qwindowsvistastyle.dll") {
-              Copy-Item "$qtPluginsDir/styles/qwindowsvistastyle.dll" -Destination "NetterUI-Windows-Portable/bin/styles/"
-          }
-          
-          foreach ($format in @("qgif", "qico", "qjpeg", "qsvg")) {
-              if (Test-Path "$qtPluginsDir/imageformats/$format.dll") {
-                  Copy-Item "$qtPluginsDir/imageformats/$format.dll" -Destination "NetterUI-Windows-Portable/bin/imageformats/"
-              }
-          }
-          
-          # Создание стартового скрипта
-          Set-Content -Path "NetterUI-Windows-Portable/NetterUI.bat" -Value "@echo off`r`nchcp 65001 > nul`r`ncd /d `"%~dp0bin`"`r`nNetterUI.exe`r`n"
-          
-          # README
-          Set-Content -Path "NetterUI-Windows-Portable/README.txt" -Value "NetterUI v${{ needs.create-release.outputs.version }}`r`n`r`nTo start the application, run NetterUI.bat`r`n"
-          
-          # Создание архива
-          Compress-Archive -Path "NetterUI-Windows-Portable/*" -DestinationPath "NetterUI-Windows-Portable.zip"
-      
-      - name: Create Installer with CPack
-        shell: msys2 {0}
-        run: |
-          cd build
-          cpack -G NSIS -C Release
-      
-      - name: Upload Artifacts
-        shell: pwsh
-        run: |
-          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
-            $tag_name = "v${{ github.event.inputs.version }}"
-          } else {
-            $tag_name = "${{ github.ref_name }}"
-          }
-          gh release upload $tag_name NetterUI-Windows-Portable.zip --clobber
-          gh release upload $tag_name build/NetterUI-*.exe --clobber
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - uses: actions/checkout@v4
+    
+    - name: Set up MSYS2
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: UCRT64
+        update: true
+        install: >-
+          mingw-w64-ucrt-x86_64-gcc
+          mingw-w64-ucrt-x86_64-cmake
+          mingw-w64-ucrt-x86_64-make
+          mingw-w64-ucrt-x86_64-qt6-base
+          mingw-w64-ucrt-x86_64-qt6-tools
+          mingw-w64-ucrt-x86_64-qt6-declarative
+          mingw-w64-ucrt-x86_64-qt6-svg
+    
+    - name: Create build directory
+      shell: msys2 {0}
+      run: |
+        mkdir -p build
+        cd build
+        echo "Build directory created"
+    
+    - name: Configure CMake
+      shell: msys2 {0}
+      run: |
+        cd build
+        cmake -G "MSYS Makefiles" .. \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DMSYS2_INSTALL_DIR=/ucrt64
+    
+    - name: Build
+      shell: msys2 {0}
+      run: |
+        cd build
+        make -j$(nproc)
+    
+    - name: Create deployment package
+      shell: msys2 {0}
+      run: |
+        mkdir -p packages/NetterUI
+        cp build/bin/NetterUI.exe packages/NetterUI/
+        cp build/run_netter_ui.bat packages/NetterUI/
+        
+        # Copy all DLLs from build/bin to packages/NetterUI
+        cp -r build/bin/*.dll packages/NetterUI/
+        
+        # Copy platform plugins
+        mkdir -p packages/NetterUI/platforms
+        mkdir -p packages/NetterUI/styles
+        mkdir -p packages/NetterUI/imageformats
+        
+        cp -r build/bin/platforms/* packages/NetterUI/platforms/ || true
+        cp -r build/bin/styles/* packages/NetterUI/styles/ || true
+        cp -r build/bin/imageformats/* packages/NetterUI/imageformats/ || true
+        
+        cd packages
+        7z a -tzip ../NetterUI-windows.zip NetterUI
+    
+    - name: Upload Qt GUI artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: netter-gui-windows
+        path: NetterUI-windows.zip
 
-  build-linux:
-    # Linux section remains unchanged
-    name: Build Linux
-    needs: create-release
-    runs-on: ubuntu-20.04
+  build-full-package:
+    name: Create full package
+    runs-on: windows-latest
+    needs: [build-rust-cli, build-qt-gui]
     
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
-      - name: Install Dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential libgl1-mesa-dev libpq-dev
-          sudo apt-get install -y qt6-base-dev libqt6widgets6 libqt6gui6 libqt6core6
-      
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-      
-      - name: Build Rust Backend
-        run: |
-          # Отключаем использование сборки nasm в aws-lc-sys
-          export AWS_LC_SYS_NO_ASM=1
-          
-          cargo build --release
-      
-      - name: Build Qt UI (Direct Compilation)
-        run: |
-          mkdir -p linux_bin
-          
-          find src/client -name "*.cpp" > cpp_files.txt
-          
-          g++ -o linux_bin/NetterUI $(cat cpp_files.txt) -std=c++17 -O2 $(pkg-config --cflags --libs Qt6Widgets)
-      
-      - name: Create AppImage
-        run: |
-          sudo apt-get install -y libfuse2
-          wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
-          wget -q https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
-          chmod +x linuxdeploy*.AppImage
-          
-          mkdir -p AppDir/usr/bin AppDir/usr/share/applications AppDir/usr/share/icons/hicolor/256x256/apps
-          
-          cp target/release/netter AppDir/usr/bin/
-          cp linux_bin/NetterUI AppDir/usr/bin/
-          
-          cat > AppDir/usr/share/applications/netterui.desktop << EOF
-          [Desktop Entry]
-          Name=NetterUI
-          Exec=NetterUI
-          Icon=netterui
-          Type=Application
-          Categories=Development;Network;
-          Comment=Netter - tool for easily starting web servers
-          EOF
-          
-          ./linuxdeploy-x86_64.AppImage --appdir=AppDir --executable=AppDir/usr/bin/NetterUI
-          ./linuxdeploy-plugin-qt-x86_64.AppImage --appdir=AppDir
-          ./linuxdeploy-x86_64.AppImage --appdir=AppDir --output appimage
-      
-      - name: Create Portable Package
-        run: |
-          mkdir -p NetterUI-Linux-Portable/bin
-          cp target/release/netter NetterUI-Linux-Portable/bin/
-          cp linux_bin/NetterUI NetterUI-Linux-Portable/bin/
-          
-          cat > NetterUI-Linux-Portable/run_netterui.sh << EOF
-          #!/bin/bash
-          cd "\$(dirname "\$0")/bin"
-          ./NetterUI
-          EOF
-          
-          chmod +x NetterUI-Linux-Portable/run_netterui.sh
-          
-          cat > NetterUI-Linux-Portable/README.txt << EOF
-          NetterUI v${{ needs.create-release.outputs.version }}
-          
-          To start the application, run ./run_netterui.sh
-          
-          Dependencies:
-          - Qt6 (libqt6widgets6, libqt6gui6, libqt6core6)
-          - PostgreSQL client (libpq5)
-          EOF
-          
-          tar -czf NetterUI-Linux-Portable.tar.gz NetterUI-Linux-Portable
-      
-      - name: Create DEB Package
-        run: |
-          sudo apt-get install -y dpkg-dev
-          
-          mkdir -p netterui_pkg/DEBIAN
-          mkdir -p netterui_pkg/usr/bin
-          mkdir -p netterui_pkg/usr/share/applications
-          mkdir -p netterui_pkg/usr/share/icons/hicolor/256x256/apps
-          
-          cp target/release/netter netterui_pkg/usr/bin/
-          cp linux_bin/NetterUI netterui_pkg/usr/bin/
-          
-          cat > netterui_pkg/usr/share/applications/netterui.desktop << EOF
-          [Desktop Entry]
-          Name=NetterUI
-          Exec=/usr/bin/NetterUI
-          Icon=netterui
-          Type=Application
-          Categories=Development;Network;
-          Comment=Netter - tool for easily starting web servers
-          EOF
-          
-          cat > netterui_pkg/DEBIAN/control << EOF
-          Package: netterui
-          Version: ${{ needs.create-release.outputs.version }}
-          Section: devel
-          Priority: optional
-          Architecture: amd64
-          Depends: libqt6widgets6, libqt6gui6, libqt6core6, libpq5
-          Maintainer: NetterUI Team
-          Description: Netter - tool for easily starting web servers
-           NetterUI provides a graphical interface for managing web servers.
-          EOF
-          
-          dpkg-deb --build netterui_pkg
-          mv netterui_pkg.deb netterui_${{ needs.create-release.outputs.version }}_amd64.deb
-      
-      - name: Upload Artifacts
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            tag_name="v${{ github.event.inputs.version }}"
-          else
-            tag_name="${{ github.ref_name }}"
-          fi
-          gh release upload $tag_name NetterUI-*.AppImage --clobber
-          gh release upload $tag_name NetterUI-Linux-Portable.tar.gz --clobber
-          gh release upload $tag_name netterui_${{ needs.create-release.outputs.version }}_amd64.deb --clobber
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Download all artifacts
+      uses: actions/download-artifact@v3
+      with:
+        path: artifacts
+    
+    - name: Extract all artifacts
+      shell: powershell
+      run: |
+        mkdir -p netter-full-package
+        
+        # Extract CLI
+        7z x artifacts/netter-cli-windows-latest/netter-windows.zip -onetter-full-package/
+        
+        # Extract GUI
+        7z x artifacts/netter-gui-windows/NetterUI-windows.zip -onetter-full-package/
+        
+        cd netter-full-package
+        
+        # Create launcher script
+        @"
+        @echo off
+        chcp 65001 > nul
+        echo Starting Netter...
+        start "" "NetterUI/NetterUI.exe"
+        "@ | Out-File -FilePath "launch-netter.bat" -Encoding ASCII
+        
+        cd ..
+        7z a netter-full-package-windows.zip netter-full-package/*
+    
+    - name: Upload full package
+      uses: actions/upload-artifact@v3
+      with:
+        name: netter-full-package-windows
+        path: netter-full-package-windows.zip
+    
+    - name: Create release (if tagged)
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          netter-full-package-windows.zip
+          artifacts/netter-cli-windows-latest/netter-windows.zip
+          artifacts/netter-cli-ubuntu-latest/netter-linux.tar.gz
+          artifacts/netter-gui-windows/NetterUI-windows.zip
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
