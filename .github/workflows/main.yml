@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '0.3.2'
+        required: true
+        default: '0.3.2'
 
 permissions:
   contents: write
