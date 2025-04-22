@@ -53,7 +53,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build-windows:
-    name: Build Windows (MSYS2 UCRT64)
+    name: Build Windows (PowerShell + MSYS2)
     needs: create-release
     runs-on: windows-latest
     
@@ -75,13 +75,29 @@ jobs:
             mingw-w64-ucrt-x86_64-cmake
             mingw-w64-ucrt-x86_64-ninja
             mingw-w64-ucrt-x86_64-nsis
-            mingw-w64-ucrt-x86_64-rust
+      
+      - name: Install Rust (windows-gnu)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          target: x86_64-pc-windows-gnu
       
       - name: Build Rust Backend
-        shell: msys2 {0}
+        shell: pwsh
         run: |
-          export PATH="/ucrt64/bin:$PATH"
-          cargo build --release
+          # Настраиваем пути и переменные для MSYS2/UCRT64
+          $env:PATH = "C:\msys64\ucrt64\bin;C:\msys64\usr\bin;$env:PATH"
+          $env:CMAKE_GENERATOR = "MinGW Makefiles"
+          $env:LIBCLANG_PATH = "C:\msys64\ucrt64\bin"
+          $env:LIBPQ_DIR = "C:\msys64\ucrt64"
+          
+          # Debug - выводим информацию о системе
+          Write-Host "---- System Info ----"
+          Write-Host "PATH: $env:PATH"
+          Write-Host "GCC: $(where.exe gcc)"
+          Write-Host "CMake: $(where.exe cmake)"
+          
+          # Собираем с явным указанием цели для windows-gnu
+          cargo build --release --target x86_64-pc-windows-gnu
       
       - name: Build Qt UI with CMake
         shell: msys2 {0}
@@ -97,29 +113,37 @@ jobs:
         run: |
           mkdir -p NetterUI-Windows-Portable/bin
           
-          Copy-Item "target/release/netter.exe" -Destination "NetterUI-Windows-Portable/bin/" -ErrorAction SilentlyContinue
+          # Копируем Rust backend
+          Copy-Item "target/x86_64-pc-windows-gnu/release/netter.exe" -Destination "NetterUI-Windows-Portable/bin/" -ErrorAction SilentlyContinue
+          
+          # Копируем Qt frontend
           Copy-Item "build/bin/NetterUI.exe" -Destination "NetterUI-Windows-Portable/bin/" -ErrorAction SilentlyContinue
           
           $msys2_bin = "C:/msys64/ucrt64/bin"
           
+          # PostgreSQL библиотеки
           Copy-Item "$msys2_bin/libpq.dll" -Destination "NetterUI-Windows-Portable/bin/"
-          Copy-Item "$msys2_bin/libcrypto*.dll" -Destination "NetterUI-Windows-Portable/bin/"
-          Copy-Item "$msys2_bin/libssl*.dll" -Destination "NetterUI-Windows-Portable/bin/"
+          Copy-Item "$msys2_bin/libcrypto*.dll" -Destination "NetterUI-Windows-Portable/bin/" -ErrorAction SilentlyContinue
+          Copy-Item "$msys2_bin/libssl*.dll" -Destination "NetterUI-Windows-Portable/bin/" -ErrorAction SilentlyContinue
           
+          # MinGW Runtime
           Copy-Item "$msys2_bin/libgcc_s_seh-1.dll" -Destination "NetterUI-Windows-Portable/bin/"
           Copy-Item "$msys2_bin/libstdc++-6.dll" -Destination "NetterUI-Windows-Portable/bin/"
           Copy-Item "$msys2_bin/libwinpthread-1.dll" -Destination "NetterUI-Windows-Portable/bin/"
           
+          # Дополнительные библиотеки из CMakeLists.txt
           foreach ($lib in @("zlib1.dll", "libbz2-1.dll", "libpng16-16.dll", "libharfbuzz-0.dll", "libfreetype-6.dll", "libiconv-2.dll")) {
               if (Test-Path "$msys2_bin/$lib") {
                   Copy-Item "$msys2_bin/$lib" -Destination "NetterUI-Windows-Portable/bin/"
               }
           }
           
+          # Qt библиотеки
           Copy-Item "$msys2_bin/Qt6Core.dll" -Destination "NetterUI-Windows-Portable/bin/"
           Copy-Item "$msys2_bin/Qt6Gui.dll" -Destination "NetterUI-Windows-Portable/bin/"
           Copy-Item "$msys2_bin/Qt6Widgets.dll" -Destination "NetterUI-Windows-Portable/bin/"
           
+          # Qt плагины
           mkdir -p NetterUI-Windows-Portable/bin/platforms NetterUI-Windows-Portable/bin/styles NetterUI-Windows-Portable/bin/imageformats
           
           $qtPluginsDir = "C:/msys64/ucrt64/share/qt6/plugins"
@@ -137,10 +161,13 @@ jobs:
               }
           }
           
+          # Создание стартового скрипта
           Set-Content -Path "NetterUI-Windows-Portable/NetterUI.bat" -Value "@echo off`r`nchcp 65001 > nul`r`ncd /d `"%~dp0bin`"`r`nNetterUI.exe`r`n"
           
+          # README
           Set-Content -Path "NetterUI-Windows-Portable/README.txt" -Value "NetterUI v${{ needs.create-release.outputs.version }}`r`n`r`nTo start the application, run NetterUI.bat`r`n"
           
+          # Создание архива
           Compress-Archive -Path "NetterUI-Windows-Portable/*" -DestinationPath "NetterUI-Windows-Portable.zip"
       
       - name: Create Installer with CPack
