@@ -1,0 +1,28 @@
+name: gui
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main", "dev" ]
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: build gui
+      run: /
+        apt-get upgrade
+        apt install cmake
+        apt install ninja-build
+        apt install mingw-w64
+        apt install qt6-base-dev
+        nkdir build
+        cd build
+        cmake -S .. -G "Ninja"
+        cmake --build .
