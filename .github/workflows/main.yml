@@ -61,6 +61,37 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       
+      - name: Modify Cargo.toml to disable AWS-LC ASM
+        shell: pwsh
+        run: |
+          # Временно изменяем Cargo.toml для отключения ассемблера в aws-lc-sys
+          if (Test-Path "Cargo.toml") {
+            $content = Get-Content -Path "Cargo.toml" -Raw
+            
+            # Добавляем секцию [patch.crates-io]
+            if ($content -notmatch "\[patch.crates-io\]") {
+              $content += @"
+          
+          [patch.crates-io]
+          aws-lc-sys = { version = "0.28.1", features = ["no-asm"] }
+          "@
+            } else {
+              # Если секция уже есть, добавляем только aws-lc-sys
+              $content = $content -replace "\[patch.crates-io\]", "[patch.crates-io]`naws-lc-sys = { version = `"0.28.1`", features = [`"no-asm`"] }"
+            }
+            
+            Set-Content -Path "Cargo.toml" -Value $content
+            Write-Host "Modified Cargo.toml to disable AWS-LC ASM"
+            
+            # Выводим для отладки
+            Get-Content -Path "Cargo.toml" | Select-String -Pattern "patch.crates-io" -Context 0,5
+          } else {
+            Write-Host "Cargo.toml not found in current directory!"
+            Get-ChildItem -Recurse -Path "." -Filter "Cargo.toml" | ForEach-Object { 
+              Write-Host "Found Cargo.toml at $($_.FullName)" 
+            }
+          }
+      
       - name: Setup MSYS2
         uses: msys2/setup-msys2@v2
         with:
@@ -86,18 +117,13 @@ jobs:
         run: |
           # Настраиваем пути и переменные для MSYS2/UCRT64
           $env:PATH = "C:\msys64\ucrt64\bin;C:\msys64\usr\bin;$env:PATH"
-          $env:CMAKE_GENERATOR = "MinGW Makefiles"
-          $env:LIBCLANG_PATH = "C:\msys64\ucrt64\bin"
           $env:LIBPQ_DIR = "C:\msys64\ucrt64"
           
-          # Debug - выводим информацию о системе
-          Write-Host "---- System Info ----"
-          Write-Host "PATH: $env:PATH"
-          Write-Host "GCC: $(where.exe gcc)"
-          Write-Host "CMake: $(where.exe cmake)"
+          # Отключаем использование сборки nasm в aws-lc-sys
+          $env:AWS_LC_SYS_NO_ASM = "1"
           
           # Собираем с явным указанием цели для windows-gnu
-          cargo build --release --target x86_64-pc-windows-gnu
+          cargo build --release --target x86_64-pc-windows-gnu -v
       
       - name: Build Qt UI with CMake
         shell: msys2 {0}
@@ -107,6 +133,8 @@ jobs:
           cd build
           cmake -G "Ninja" -DCMAKE_BUILD_TYPE=Release ..
           cmake --build .
+      
+      # Остальная часть workflow остается без изменений
       
       - name: Create Portable Package
         shell: pwsh
@@ -189,6 +217,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  # Секция для Linux остается без изменений
   build-linux:
     name: Build Linux
     needs: create-release
@@ -209,6 +238,9 @@ jobs:
       
       - name: Build Rust Backend
         run: |
+          # Отключаем использование сборки nasm в aws-lc-sys
+          export AWS_LC_SYS_NO_ASM=1
+          
           cargo build --release
       
       - name: Build Qt UI (Direct Compilation)
