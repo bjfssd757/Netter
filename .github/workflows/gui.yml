@@ -17,24 +17,24 @@ jobs:
     - uses: actions/checkout@v4
     - name: build gui
       run: |
-        apt-get upgrade
-        apt install cmake
-        apt install ninja-build
-        apt install mingw-w64
-        apt install qt6-base-dev
+        sudo apt-get upgrade
+        sudo apt install cmake
+        sudo apt install ninja-build
+        sudo apt install mingw-w64
+        sudo apt install qt6-base-dev
         nkdir build
         cd build
-        cmake -S .. -G "Ninja"
-        cmake --build .
+        sudo cmake -S .. -G "Ninja"
+        sudo cmake --build .
     - name: Install dependencies
       run: |
-       apt-get update
-       apt-get upgrade -y
+       sudo apt-get update
+       sudo apt-get upgrade -y
        sudo apt-get install -y postgresql postgresql-contrib libpq-dev
     - name: Build
       run: |
         mkdir build
         cd build
-        cmake -S .. -G "Ninja"
-        cmake --build .
+        sudo cmake -S .. -G "Ninja"
+        sudo cmake --build .
        
