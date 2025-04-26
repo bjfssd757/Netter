@@ -1,0 +1,40 @@
+name: gui
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main", "dev" ]
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: build gui
+      run: |
+        sudo apt-get upgrade
+        sudo apt install cmake
+        sudo apt install ninja-build
+        sudo apt install mingw-w64
+        sudo apt install qt6-base-dev
+        nkdir build
+        cd build
+        sudo cmake -S .. -G "Ninja"
+        sudo cmake --build .
+    - name: Install dependencies
+      run: |
+       sudo apt-get update
+       sudo apt-get upgrade -y
+       sudo apt-get install -y postgresql postgresql-contrib libpq-dev
+    - name: Build
+      run: |
+        mkdir build
+        cd build
+        sudo cmake -S .. -G "Ninja"
+        sudo cmake --build .
+       

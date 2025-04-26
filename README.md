@@ -4,14 +4,14 @@ Netter is a CLI tool for quickly and easily launching servers.
 
 ## Table of Contents
 
+* [Future](#future)
 * [Features](#features)
-* [Functional](#functional)
 * [Documentation](#documentation)
 * [Installation](#installation)
 * [Dependencies](#dependencies)
 * [Commands](#commands)
 
-## future
+## Future
 
 * Support for complex server structures and routing;
 * Support for different types of servers: gRPC, TCP/UDP sockets;

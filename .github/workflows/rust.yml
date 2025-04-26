@@ -1,0 +1,75 @@
+name: Build cli
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main", "dev" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-linux:
+    name: build cli linux
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get upgrade -y
+        sudo apt install postgresql postgresql-contrib libpq-dev
+    - name: Build
+      run: cargo build --release -v
+
+  build-windows:
+    name: build cli windows
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install PgSQL
+      run: |
+        choco install postgresql --version=16 --params '/Password:postgres' -y
+    - name: Setup PostgreSQL env vars
+      run: |
+        echo "C:\Program Files\PostgreSQL\16\lib" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+        echo "C:\Program Files\PostgreSQL\16\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+        echo "PQ_LIB_DIR=C:\Program Files\PostgreSQL\16\lib" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        echo "POSTGRES_PATH=C:\Program Files\PostgreSQL\16" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+    - name: Build CLI
+      run: |
+        $env:LIB += ";$env:POSTGRES_PATH\lib"
+        $env:INCLUDE += ";$env:POSTGRES_PATH\include"
+        cargo build --release -v
+
+  test:
+    name: test cli
+    needs: [build-linux, build-windows]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout/@v4
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get upgrade -y
+          sudo apt install postgresql postgresql-contrib libpq-dev
+      - name: Install PgSQL (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          choco install postgresql --version=16 --params '/Password:postgres' -y
+          echo "C:\Program Files\PostgreSQL\16\lib" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          echo "C:\Program Files\PostgreSQL\16\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          echo "PQ_LIB_DIR=C:\Program Files\PostgreSQL\16\lib" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          echo "POSTGRES_PATH=C:\Program Files\PostgreSQL\16" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Test
+        run: |
+          if ("${{ runner.os }}" -eq "Windows") {
+            $env:LIB += ";$env:POSTGRES_PATH\lib"
+            $env:INCLUDE += ";$env:POSTGRES_PATH\include"
+          }
+          cargo test -v
