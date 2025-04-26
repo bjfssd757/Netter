@@ -29,6 +29,7 @@ impl Parser {
     pub fn parse(&mut self) -> Result<AstNode, String> {
         let mut statements = Vec::new();
         let mut tls_config = None;
+        let mut global_error_handler = None;
         
         while !self.is_at_end() {
             if self.check(&TokenType::Tls) {
@@ -36,21 +37,53 @@ impl Parser {
                     return Err("Дублирование TLS конфигурации".to_string());
                 }
                 tls_config = Some(Box::new(self.tls_config()?));
+            } else if self.check(&TokenType::GlobalErrorHandler) {
+
+                if global_error_handler.is_some() {
+                    return Err("Дублирование глобального обработчика ошибок".to_string());
+                }
+                global_error_handler = Some(Box::new(self.global_error_handler()?));
             } else if self.check(&TokenType::Route) {
                 statements.push(Box::new(self.route()?));
             } else {
                 return Err(format!("Ожидается 'route' или 'tls', получено: {:?}", self.peek().token_type));
             }
         }
+
+        let has_tls = tls_config.is_some();
+        let has_global_handler = global_error_handler.is_some();
         
-        if tls_config.is_some() {
+        if has_tls || has_global_handler {
             Ok(AstNode::ServerConfig {
                 routes: statements,
                 tls_config,
+                global_error_handler,
             })
         } else {
             Ok(AstNode::Program(statements))
         }
+    }
+
+    fn global_error_handler(&mut self) -> Result<AstNode, String> {
+        self.consume(&TokenType::GlobalErrorHandler, "Ожидается ключевое слово 'global_error_handler'")?;
+        self.consume(&TokenType::LParen, "Ожидается '(' после 'global_error_handler'")?;
+
+        let error_var_token = self.consume(&TokenType::Identifier(String::new()), "Ожидается имя переменной")?;
+        let error_var = match &error_var_token.token_type {
+            TokenType::Identifier(name) => name.clone(),
+            _ => return Err("Невозможно получить имя переменной".to_string()),
+        };
+
+        self.consume(&TokenType::RParen, "Ожидается ')' после имени переменной")?;
+
+        let body = self.block()?;
+
+        self.consume(&TokenType::Semicolon, "Ожидается ';' после блока глобального обработчика ошибок")?;
+
+        Ok(AstNode::GlobalErrorHandler {
+            error_var,
+            body: Box::new(body),
+        })
     }
 
     fn tls_config(&mut self) -> Result<AstNode, String> {
@@ -179,11 +212,37 @@ impl Parser {
 
         let body = self.block()?;
 
+        let on_error = if self.match_token(&TokenType::OnError) {
+            Some(Box::new(self.error_handler()?))
+        } else {
+            None
+        };
+
         self.consume(&TokenType::Semicolon, "Ожидается ';' после блока маршрута")?;
 
         Ok(AstNode::Route {
             path,
             method,
+            body: Box::new(body),
+            on_error,
+        })
+    }
+
+    fn error_handler(&mut self) -> Result<AstNode, String> {
+        self.consume(&TokenType::LParen, "Ожидается '(' после 'on_error'")?;
+
+        let error_var_token = self.consume(&TokenType::Identifier(String::new()), "Ожидается имя переменной")?;
+        let error_var = match &error_var_token.token_type {
+            TokenType::Identifier(name) => name.clone(),
+            _ => return Err("Невозможно получить имя переменной ошибки".to_string()),
+        };
+
+        self.consume(&TokenType::RParen, "Ожидается ')' после имени переменной ошибки")?;
+
+        let body = self.block()?;
+
+        Ok(AstNode::ErrorHandlerBlock {
+            error_var,
             body: Box::new(body),
         })
     }
@@ -310,18 +369,43 @@ impl Parser {
     }
 
     fn expression(&mut self) -> Result<AstNode, String> {
-        self.equality()
+        self.comparison()
     }
 
-    fn equality(&mut self) -> Result<AstNode, String> {
+    fn comparison(&mut self) -> Result<AstNode, String> {
+        let mut expr = self.additive()?;
+        
+        while self.check(&TokenType::DoubleEquals) || self.check(&TokenType::NotEquals) {
+            let operator_type = self.peek().token_type.clone();
+            self.advance();
+
+            let operator = match operator_type {
+                TokenType::DoubleEquals => "==".to_string(),
+                TokenType::NotEquals => "!=".to_string(),
+                _ => unreachable!(),
+            };
+            
+            let right = self.additive()?;
+            
+            expr = AstNode::BinaryOp {
+                left: Box::new(expr),
+                operator,
+                right: Box::new(right),
+            };
+        }
+        
+        Ok(expr)
+    }
+
+    fn additive(&mut self) -> Result<AstNode, String> {
         let mut expr = self.call_chain()?;
         
-        while self.match_token(&TokenType::DoubleEquals) {
+        while self.match_token(&TokenType::Concatenation) {
             let right = self.call_chain()?;
             
             expr = AstNode::BinaryOp {
                 left: Box::new(expr),
-                operator: "==".to_string(),
+                operator: "+".to_string(),
                 right: Box::new(right),
             };
         }
@@ -343,10 +427,14 @@ impl Parser {
                 if self.check(&TokenType::LParen) {
                     self.advance();
                     let args = self.arguments()?;
+                    let try_operator = self.match_token(&TokenType::TryOperator);
+                    let unwrap_operator = self.match_token(&TokenType::UnwrapOperator);
                     expr = AstNode::FunctionCall {
                         object: Some(Box::new(expr)),
                         name,
                         args,
+                        try_operator,
+                        unwrap_operator,
                     };
                 } else {
                     expr = AstNode::PropertyAccess {
@@ -361,13 +449,34 @@ impl Parser {
                 };
                 
                 let args = self.arguments()?;
+
+                let try_operator = self.match_token(&TokenType::TryOperator);
+                let unwrap_operator = self.match_token(&TokenType::UnwrapOperator);
+
                 expr = AstNode::FunctionCall {
                     object: None,
                     name,
                     args,
+                    try_operator,
+                    unwrap_operator,
                 };
             } else {
                 break;
+            }
+
+            if let AstNode::FunctionCall { object, name, args, try_operator, unwrap_operator } = &expr {
+                let try_operator = self.match_token(&TokenType::TryOperator);
+                let unwrap_operator = self.match_token(&TokenType::UnwrapOperator);
+
+                if try_operator || unwrap_operator {
+                    expr = AstNode::FunctionCall {
+                        object: object.clone(),
+                        name: name.clone(),
+                        args: args.clone(),
+                        try_operator,
+                        unwrap_operator,
+                    }
+                }
             }
         }
 
@@ -387,6 +496,12 @@ impl Parser {
                 _ => return Err("Невозможный случай при парсинге строки".to_string()),
             };
             Ok(AstNode::StringLiteral(value))
+        } else if self.match_token(&TokenType::Number(0)) {
+            let value = match &self.previous().token_type {
+                TokenType::Number(n) => *n,
+                _ => return Err("Невозможный случай при парсинге числа".to_string()),
+            };
+            Ok(AstNode::NumberLiteral(value))
         } else {
             Err(format!("Ожидается выражение, получено {:?}", self.peek().token_type))
         }
@@ -422,7 +537,7 @@ pub fn parse(input: &str) -> Result<AstNode, String> {
             error!("Ошибка токенизации: {}", e);
             return Err(e);
         }
-    };
+    };  
     
     let mut parser = Parser::new(tokens);
     

@@ -6,3 +6,4 @@ SERVER_STATE.json
 /logs
 *.log
 /tls
+/build_release

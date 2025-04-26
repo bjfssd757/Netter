@@ -141,6 +141,24 @@ impl Lexer {
         }
     }
 
+    fn read_number(&mut self) -> Result<i64, String> {
+        let mut number = String::new();
+        
+        while let Some(ch) = self.peek() {
+            if ch.is_digit(10) {
+                number.push(ch);
+                self.consume();
+            } else {
+                break;
+            }
+        }
+        
+        number.parse::<i64>().map_err(|_| format!(
+            "Не удалось преобразовать строку в число: {}, строка {} колонка {}", 
+            number, self.line, self.column
+        ))
+    }
+
     pub fn next_token(&mut self) -> Result<Token, String> {
         self.skip_whitespace();
         
@@ -192,12 +210,41 @@ impl Lexer {
                         Err(e) => Err(e),
                     }
                 },
+                '0'..='9' => {
+                    let number = self.read_number()?;
+                    Ok(Token { token_type: TokenType::Number(number), line, column })
+                }
                 '/' => {
                     match self.read_comment() {
                         Ok(comment) => Ok(Token { token_type: TokenType::Comment(comment), line, column }),
                         Err(e) => Err(e),
                     }
                 },
+                '?' => {
+                    self.consume();
+                    Ok(Token { token_type: TokenType::TryOperator, line, column })
+                },
+                '!' => {
+                    self.consume();
+                    if self.peek() == Some('!') {
+                        self.consume();
+                        Ok(Token { token_type: TokenType::UnwrapOperator, line, column })
+                    } else if self.peek() == Some('=') {
+                        self.consume();
+                        Ok(Token { token_type: TokenType::NotEquals, line, column })
+                    } else {
+                        Err(format!("Неизвестный символ: '{}', строка {} колонка {}", ch, line, column))
+                    }
+                },
+                '+' => {
+                    self.consume();
+                    if self.peek() == Some('=') {
+                        self.consume();
+                        Ok(Token { token_type: TokenType::PlusEqual, line, column })
+                    } else {
+                        Ok(Token { token_type: TokenType::Concatenation, line, column })
+                    }
+                }
                 _ if ch.is_alphabetic() => {
                     let ident = self.read_identifier();
                     match ident.as_str() {
@@ -209,6 +256,8 @@ impl Lexer {
                         "enabled" => Ok(Token { token_type: TokenType::Enabled, line, column }),
                         "cert_path" => Ok(Token { token_type: TokenType::CertPath, line, column }),
                         "key_path" => Ok(Token { token_type: TokenType::KeyPath, line, column }),
+                        "global_error_handler" => Ok(Token { token_type: TokenType::GlobalErrorHandler, line, column }),
+                        "onError" => Ok(Token { token_type: TokenType::OnError, line, column }),
                         "GET" | "POST" | "PUT" | "DELETE" | "PATCH" | "HEAD" | "OPTIONS" => 
                             Ok(Token { token_type: TokenType::HttpMethod(ident), line, column }),
                         _ => Ok(Token { token_type: TokenType::Identifier(ident), line, column }),
@@ -244,13 +293,14 @@ impl Lexer {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum AstNode {
     Program(Vec<Box<AstNode>>),
     Route {
         path: String,
         method: String,
         body: Box<AstNode>,
+        on_error: Option<Box<AstNode>>,
     },
     Block(Vec<Box<AstNode>>),
     VarDeclaration {
@@ -261,6 +311,8 @@ pub enum AstNode {
         object: Option<Box<AstNode>>,
         name: String,
         args: Vec<Box<AstNode>>,
+        try_operator: bool,
+        unwrap_operator: bool,
     },
     PropertyAccess {
         object: Box<AstNode>,
@@ -272,6 +324,7 @@ pub enum AstNode {
         else_branch: Option<Box<AstNode>>,
     },
     StringLiteral(String),
+    NumberLiteral(i64),
     Identifier(String),
     BinaryOp {
         left: Box<AstNode>,
@@ -286,6 +339,15 @@ pub enum AstNode {
     ServerConfig {
         routes: Vec<Box<AstNode>>,
         tls_config: Option<Box<AstNode>>,
+        global_error_handler: Option<Box<AstNode>>,
+    },
+    GlobalErrorHandler {
+        error_var: String,
+        body: Box<AstNode>,
+    },
+    ErrorHandlerBlock {
+        error_var: String,
+        body: Box<AstNode>,
     },
 }
 
@@ -299,8 +361,15 @@ impl fmt::Display for AstNode {
                 }
                 Ok(())
             },
-            AstNode::Route { path, method, body } => {
-                writeln!(f, "Маршрут: {} {} {}", method, path, body)
+            AstNode::Route { path, method, body, on_error } => {
+                match on_error {
+                    Some(e) => {
+                        writeln!(f, "Маршрут: {} {} {} {}", method, path, body, e)
+                    },
+                    None => {
+                        writeln!(f, "Маршрут: {} {} {}", method, path, body)
+                    }
+                }
             },
             AstNode::Block(statements) => {
                 writeln!(f, "{{")?;
@@ -312,14 +381,27 @@ impl fmt::Display for AstNode {
             AstNode::VarDeclaration { name, value } => {
                 writeln!(f, "val {} = {};", name, value)
             },
-            AstNode::FunctionCall { object, name, args } => {
+            AstNode::FunctionCall { object, name, args, try_operator, unwrap_operator } => {
                 if let Some(obj) = object {
                     write!(f, "{}.{}(", obj, name)?;
                 } else {
                     write!(f, "{}(", name)?;
                 }
                 let args_str: Vec<String> = args.iter().map(|arg| format!("{}", arg)).collect();
-                write!(f, "{})", args_str.join(", "))
+                match (try_operator, unwrap_operator) {
+                    (true, false) => {
+                        write!(f, "{})?", args_str.join(", "))
+                    },
+                    (false, true) => {
+                        write!(f, "{})!!", args_str.join(", "))
+                    },
+                    (false, false) => {
+                        write!(f, "{})", args_str.join(", "))
+                    },
+                    _ => {
+                        write!(f, "{})!!?", args_str.join(", "))
+                    }
+                }
             },
             AstNode::PropertyAccess { object, property } => {
                 write!(f, "{}.{}", object, property)
@@ -332,6 +414,7 @@ impl fmt::Display for AstNode {
                 writeln!(f)
             },
             AstNode::StringLiteral(value) => write!(f, "\"{}\"", value),
+            AstNode::NumberLiteral(value) => write!(f, "{}", value),
             AstNode::Identifier(name) => write!(f, "{}", name),
             AstNode::BinaryOp { left, operator, right } => {
                 write!(f, "{} {} {}", left, operator, right)
@@ -343,14 +426,27 @@ impl fmt::Display for AstNode {
                 writeln!(f, "  key_path: \"{}\"", key_path)?;
                 writeln!(f, "}}")
             },
-            AstNode::ServerConfig { routes, tls_config } => {
+            AstNode::ServerConfig { routes, tls_config, global_error_handler } => {
                 writeln!(f, "Server Configuration: {{")?;
                 if let Some(tls) = tls_config {
                     writeln!(f, "  {}", tls)?;
                 }
+                if let Some(handler) = global_error_handler {
+                    writeln!(f, "  {}", handler)?;
+                }
                 for route in routes {
                     writeln!(f, "  {}", route)?;
                 }
+                writeln!(f, "}}")
+            },
+            AstNode::GlobalErrorHandler { error_var, body } => {
+                writeln!(f, "Global Error Handler({}): {{", error_var)?;
+                writeln!(f, "   {}", body)?;
+                writeln!(f, "}}")
+            },
+            AstNode::ErrorHandlerBlock { error_var, body } => {
+                writeln!(f, "Error Handler Block({}): {{", error_var)?;
+                writeln!(f, "   {}", body)?;
                 writeln!(f, "}}")
             },
         }

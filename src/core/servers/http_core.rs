@@ -1,6 +1,6 @@
 use http_body_util::{combinators::BoxBody, BodyExt, Empty, Full};
 use hyper::{body::{self, Bytes}, header::{HeaderName, HeaderValue}, server::conn::http1, service::service_fn, Request, Response, StatusCode};
-use log::{debug, trace, error, info};
+use log::{debug, error, info, trace, warn};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -52,14 +52,6 @@ pub trait HTTP {
     fn new(addr: Vec<u16>, port: u16, routes: Routes) -> Self;
     async fn start(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
 }
-
-// #[derive(Serialize, Deserialize)]
-// pub struct ConfigHttp {
-//     host: String,
-//     port: u16,
-//     routes: Vec<RouteConfig>,
-//     tls: Option<TlsConfig>,
-// }
 
 #[derive(Serialize, Deserialize)]
 pub struct RouteConfig {
@@ -231,47 +223,91 @@ async fn handler(
     req: Request<body::Incoming>,
     server_state: Arc<Mutex<Server>>
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
-    let server = server_state.lock().unwrap();
+    let interpreter_arc: Option<Arc<Mutex<Interpreter>>>;
+    let static_routes: Vec<Routes>;
+
+    {
+        let server = server_state.lock().expect("Failed to lock server state");
+        interpreter_arc = server.interpreter.clone();
+        static_routes = server.routes.clone();
+    }
+
+    let method = req.method().clone();
+    let path = req.uri().path().to_string();
+    let hyper_headers = req.headers().clone();
+
+    let query_params: HashMap<String, String> = req.uri().query()
+        .map(|v| {
+            url::form_urlencoded::parse(v.as_bytes())
+                .into_owned()
+                .collect()
+        })
+        .unwrap_or_else(HashMap::new);
+
+    let body_bytes = match http_body_util::BodyExt::collect(req.into_body()).await {
+        Ok(collect) => collect.to_bytes(),
+        Err(e) => {
+            error!("Failed to collect request body: {}", e);
+            let mut response = hyper::Response::new(full("Error reading request body!"));
+            *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+            return Ok(response);
+        }
+    };
+    let body_str: Option<String> = String::from_utf8(body_bytes.to_vec()).ok();
+
+    let mut header_map = HashMap::new();
+    for (key, value) in &hyper_headers {
+        if let Ok(value_string) = value.to_str() {
+            header_map.insert(key.as_str().to_string(), value_string.to_string());
+        } else {
+            warn!("Header '{}' containts non-UTF8 value!", key.as_str());
+        }
+    }
     
-    if let Some(interpreter) = &server.interpreter {
-        let method = req.method().as_str().to_string();
-        let path = req.uri().path().to_string();
-        
-        let params = HashMap::new();
-        
+    if let Some(interpreter) = interpreter_arc {
+
+        let interpreter_guard = interpreter.lock().expect("Failed to lock interpreter");
+
         let response_obj = crate::core::language::interpreter::handle_request(
-            &interpreter.lock().unwrap(),
-            &method,
+            &interpreter_guard,
+            method.as_str(),
             &path,
-            params
+            query_params,
+            header_map,
+            body_str,
         );
         
         let mut response = Response::new(full(response_obj.body.unwrap_or_default()));
-        *response.status_mut() = StatusCode::from_u16(response_obj.status).unwrap_or(StatusCode::OK);
-        
+        *response.status_mut() = StatusCode::from_u16(response_obj.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+
         for (key, value) in &response_obj.headers {
             if let Ok(header_name) = HeaderName::from_str(key) {
                 if let Ok(header_value) = HeaderValue::from_str(value) {
                     response.headers_mut().insert(header_name, header_value);
+                } else {
+                     warn!("Invalid header value for key '{}': {}", key, value);
                 }
+            } else {
+                 warn!("Invalid header name: {}", key);
             }
         }
         
         return Ok(response);
-    }
-    
-    for route in &server.routes {
-        if req.method().as_str() == route.method && req.uri().path() == route.path {
-            let mut response = Response::new(full(route.response.body.clone()));
-            *response.status_mut() = StatusCode::from_u16(route.response.status).unwrap_or(StatusCode::OK);
-            for (key, value) in &route.response.headers {
-                if let Ok(header_name) = HeaderName::from_str(key) {
-                    if let Ok(header_value) = HeaderValue::from_str(value) {
-                        response.headers_mut().insert(header_name, header_value);
+        
+    } else {
+        for route in &static_routes {
+            if method.to_string() == route.method && path == route.path {
+                let mut response = Response::new(full(route.response.body.clone()));
+                *response.status_mut() = StatusCode::from_u16(route.response.status).unwrap_or(StatusCode::OK);
+                for (key, value) in &route.response.headers {
+                    if let Ok(header_name) = HeaderName::from_str(key) {
+                        if let Ok(header_value) = HeaderValue::from_str(value) {
+                            response.headers_mut().insert(header_name, header_value);
+                        }
                     }
                 }
+                return Ok(response);
             }
-            return Ok(response);
         }
     }
 

@@ -4,7 +4,7 @@ version = "0.3.2"
 edition = "2024"
 description = "Netter is a CLI tool for fast and easy server startup!"
 license = "MIT"
-reepository = "https://github.com/bjfssd757/Netter"
+repository = "https://github.com/bjfssd757/Netter"
 
 [dependencies]
 chrono = "0.4.40"
@@ -32,3 +32,4 @@ tokio = { version="1.44.2", features=["full"] }
 tokio-rustls = "0.26.2"
 tokio-tungstenite = "0.26.2"
 toml = "0.8.20"
+url = "2.5.4"
