@@ -1,16 +1,14 @@
-use std::collections::HashMap; 
+use std::collections::HashMap;
 use std::fmt; 
 use log::{error, trace, warn, debug};
-use rustls::crypto::hash::Hash; 
-use crate::core::servers::http_core::TlsConfig; 
+use crate::core::servers::http_core::TlsConfig;
+use crate::core::language::operators::Types;
 
 
 #[allow(dead_code)] 
 #[derive(Debug, Clone)] 
 pub enum RouteAction { 
-    
     VarDeclaration(String, Box<RouteAction>), 
-    
     FunctionCall {
         object: Option<String>, 
         name: String, 
@@ -18,40 +16,31 @@ pub enum RouteAction {
         try_operator: bool, 
         unwrap_operator: bool, 
     },
-    
     Condition {
         check: Box<RouteAction>, 
         then_branch: Vec<Box<RouteAction>>, 
         else_branch: Option<Vec<Box<RouteAction>>>, 
     },
-    
     StringLiteral(String), 
-    
     NumberLiteral(i64), 
-    
     Identifier(String), 
-    
     BinaryOp {
         left: Box<RouteAction>, 
         operator: String, 
         right: Box<RouteAction>, 
     },
-    
     PropertyAccess {
         object: Box<RouteAction>, 
         property: String, 
     },
-
     GlobalErrorHandler {
         error_var: String, 
         body: Vec<Box<RouteAction>>, 
     },
-
     ErrorHandlerBlock {
         error_var: String, 
         body: Vec<Box<RouteAction>>, 
     },
-
     Error(String), 
 }
 

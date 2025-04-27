@@ -4,6 +4,7 @@
 #include <QFile>
 #include <QTextStream>
 #include <QCommandLineParser>
+#include "core/cli_interface.h"
 
 static QFile logFile("debug_output.log");
 
@@ -44,11 +45,9 @@ int main(int argc, char *argv[])
         qWarning() << "Failed to open log file.";
     }
 
-    // Загружаем настройки (но не применяем их здесь)
     JsonSettings::instance().load();
     JsonSettings::instance().debugSettings();
     
-    // Загрузка стилей
     QFile styleFile(":src/client/assets/styles/main.qss");
     if (styleFile.open(QFile::ReadOnly | QFile::Text)) {
         QTextStream stream(&styleFile);
@@ -56,11 +55,9 @@ int main(int argc, char *argv[])
         styleFile.close();
     }
     
-    // Создаем главное окно (настройки будут применены в его конструкторе)
     MainWindow mainWindow;
     mainWindow.show();
 
-    // Сохраняем настройки при выходе
     QObject::connect(&app, &QApplication::aboutToQuit, []() {
         qDebug() << "Приложение завершается, сохранение настроек...";
         JsonSettings::instance().save();

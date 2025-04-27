@@ -37,6 +37,8 @@ Stopping a server is done using the command:
 netter stop
 ```
 
+[Documentation for Route Definition Language](RDL_DOCUMENTATION.md)
+
 ### Start
 
 The start command accepts the following parameters:

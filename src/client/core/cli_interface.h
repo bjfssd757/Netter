@@ -19,6 +19,7 @@ public:
     bool stopServer();
     bool isServerRunning() const;
     bool isNetterAvailable();
+    // static void setNetterPath();
     
     QString parsePath(const QString& filePath, bool* success = nullptr);
 
@@ -39,6 +40,7 @@ private:
     QProcess* m_process;
     bool m_serverRunning;
     QString m_serverHostPort;
+    static QString m_path;
 };
 
 #endif // CLI_INTERFACE_H

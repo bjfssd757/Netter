@@ -1,6 +1,15 @@
 use std::fmt;
 
 #[derive(Debug, PartialEq, Clone)]
+pub enum Types {
+    String(String),
+    Number(i64),
+    Vec(Vec<Types>),
+    Bool(bool),
+    None,
+}
+
+#[derive(Debug, PartialEq, Clone)]
 pub enum TokenType {
     Route,              // route
     Val,                // val

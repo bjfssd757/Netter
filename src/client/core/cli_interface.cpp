@@ -4,6 +4,8 @@
 #include <QRegularExpression>
 #include <QThread>
 
+QString CliInterface::m_path = QString();
+
 CliInterface::CliInterface(QObject *parent)
     : QObject(parent)
     , m_process(nullptr)
@@ -265,7 +267,7 @@ void CliInterface::handleProcessFinished(int exitCode, QProcess::ExitStatus exit
 bool CliInterface::isNetterAvailable()
 {
     QProcess checkProcess;
-    checkProcess.start("netter", QStringList() << "version");
+    checkProcess.start("netter", QStringList() << "--version");
     
     bool started = checkProcess.waitForStarted(3000);
     if (!started) {
@@ -290,3 +292,31 @@ bool CliInterface::isNetterAvailable()
     
     return checkProcess.exitCode() == 0;
 }
+
+// void CliInterface::setNetterPath()
+// {
+//     CliInterface::m_path = QString(NETTER_PATH);
+
+//     if (m_path.isEmpty()) {
+//         qWarning() << "Netter path is empty";
+//         return;
+//     } else {
+//         QProcess checkProcess;
+//         QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+//         QString currentPath = env.value("PATH");
+
+//         #ifdef Q_OS_WIN
+//         env.insert("PATH", currentPath + ";" + m_path);
+//         #else
+//         env.insert("PATH", currentPath + ":" + m_path);
+//         #endif
+
+//         checkProcess.setProcessEnvironment(env);
+
+//         checkProcess.start("netter", QStringList() << "--version");
+//         if (!checkProcess.waitForStarted()) {
+//             qWarning() << "Failed to start netter process:" << checkProcess.errorString();
+//             return;
+//         }
+//     }
+// }

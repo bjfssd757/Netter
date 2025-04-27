@@ -34,6 +34,8 @@ netter start
 netter stop
 ```
 
+[Документация по Route Definition Language](RDL_DOCUMENTATION_ru.md)
+
 ### Start
 
 Команда start принимает в себя следующие параметры:

@@ -5,7 +5,7 @@ use crate::core::servers::http_core;
 use crate::core::servers::http_core::HTTP;
 use crate::core::language::parser;
 use std::process::Command;
-use diesel::IntoSql;
+use std::process::ExitStatus;
 use log::{
     info,
     warn,
@@ -56,39 +56,24 @@ pub async fn start_parse(path: String) -> Result<(), Box<dyn std::error::Error>>
 }
 
 pub fn start_client() -> Result<(), Box<dyn std::error::Error>> {
-    debug!("Creating build directory...");
+    info!("Starting client...");
 
-    let output = Command::new("cmake")
-        .arg("-S")
-        .arg(".")
-        .arg("-B")
-        .arg("build")
-        .arg("-G")
-        .arg("Ninja")
-        .output()
-        .expect("Failed to create build directory client UI");
-
-    if !output.stdout.is_empty() {
-        println!("{}", std::str::from_utf8(&output.stdout)?);
+    if cfg!(target_os = "windows") {
+        Command::new("./setup_dependencies.bat")
+            .spawn()
+            .map_err(|e| {
+                error!("Failed to execute setup_dependencies.py: {e}");
+                "Failed to execute setup_dependencies.py"
+            })?;
+    } else {
+        Command::new("python3")
+            .arg("setup_dependencies.py")
+            .spawn()
+            .map_err(|e| {
+                error!("Failed to execute setup_dependencies.py: {e}");
+                "Failed to execute setup_dependencies.py"
+            })?;
     }
-
-    if !output.stderr.is_empty() {
-        eprintln!("{}", std::str::from_utf8(&output.stderr)?);
-    }
-
-    debug!("Building...");
-
-    Command::new("cmake")
-        .arg("--build")
-        .arg("build")
-        .output()
-        .expect("Failed to build client UI");
-
-    debug!("Starting client UI...");
-
-    Command::new("build/run_netter_ui.bat").spawn()
-        .expect("Failed to start client UI");
-
     Ok(())
 }
 

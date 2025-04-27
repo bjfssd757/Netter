@@ -7,3 +7,10 @@ SERVER_STATE.json
 *.log
 /tls
 /build_release
+/configure.bat
+/configure.sh
+/build.bat
+/build.sh
+/.venv
+/__pycache__
+/*.exe

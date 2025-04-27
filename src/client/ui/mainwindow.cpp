@@ -38,6 +38,7 @@ MainWindow::MainWindow(QWidget *parent)
     m_cliInterface = new CliInterface(this);
 
     if (!m_cliInterface->isNetterAvailable()) {
+        qDebug() << "Netter CLI not found or not executable.";
         QMessageBox::critical(
             this,
             tr("Netter CLI Not Found"),
