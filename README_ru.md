@@ -82,28 +82,63 @@ netter stop
 
 ## Установка
 
-В случае появления ошибок и вопрсов по установки Rust вы можете посмотреть документацию в [книге по Rust](https://rust-lang.github.io/book/ch01-01-installation.html)
-
 ### Windows
 
-* Для установки Rust на windows вам необходимо перейти по [ссылке](https://www.rust-lang.org/tools/install) и загрузить от туда сам язык.
+Предварительное требование: установленный MSVC. Если у вас его ещё нет, вы можете скачать его с помощью[гайда](https://learn.microsoft.com/ru-ru/cpp/build/vscpp-step-0-installation?view=msvc-170)
 
-* Затем вам необходимо установить netter:
+> [!WARN]
+> Если у вас установлен Qt6 через систему MSYS2 (или другую) под другой компилятор (например, mingw) и вы видите ошибку при запуске `netter client`, вам придётся самостоятельно скачать Qt под MSVC либо перенести (или удалить) ваш текущий Qt и запустить `netter client` заново.
+
+**Rust**:
+
+* Запустите скрипт `install_rust.bat`;
+
+Далее у вас 2 варианта: установить netter напрямую через cargo:
 
 ```powershell
 cargo install netter
 ```
 
+или собрать релизную версию проекта из исходников:
+
+* Перейдите в корень проекта;
+* Запустите `cargo build --release`;
+* (**ОПЦИОНАЛЬНО**): Добавьте путь "path/to/netter/target/release" в PATH.
+
+Далее вы можете пользоваться netter напрямую (если вы не выполнили последний шаг, то только в папке с проектом):
+
+```powershell
+netter client
+```
+
+или любую другую команду от netter.
+
+**Desktop GUI**:
+
+* Запустите `netter client`;
+
+Далее всё произойдёт само. Начнётся поиск MSVC, Qt6, Cmake, Ninja. Если чего-то из этого (кроме MSVC) не будет найдено, [скрипт](setup_dependencies.py) скачает автоматически.
+
 ### Linux
 
-* Установим Rust:
+**Rust**:
 
-```bash
-curl --proto '=https' --tlsv1.2 https://sh.rustup.rs -sSf | sh
-```
+* Запустите скрипт `install_rust.sh`
 
-* Установка netter:
+Далее у вас 2 варианта: установить netter напрямую через cargo:
 
-```bash
+```powershell
 cargo install netter
 ```
+
+или собрать релизную версию проекта из исходников:
+
+* Перейдите в корень проекта;
+* Запустите `cargo build --release`;
+* (**ОПЦИОНАЛЬНО**): Добавьте путь "path/to/netter/target/release" в PATH.
+
+**Desktop GUI**:
+
+* Запустите `netter client`;
+
+Далее всё произойдёт само. Начнётся поиск MSVC, Qt6, Cmake, Ninja. Если чего-то из этого (кроме MSVC) не будет найдено, [скрипт](setup_dependencies.py) скачает автоматически.

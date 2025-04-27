@@ -5,73 +5,70 @@ Netter is a CLI tool for quickly and easily launching servers.
 ## Table of Contents
 
 * [Future](#future)
-* [Features](#features)
+* [Functionality](#functionality)
 * [Documentation](#documentation)
 * [Installation](#installation)
-* [Dependencies](#dependencies)
-* [Commands](#commands)
 
 ## Future
 
 * Support for complex server structures and routing;
-* Support for different types of servers: gRPC, TCP/UDP sockets;
-* Support for SSL/TLS.
+* Support for different types of servers: HTTP, gRPC, TCP/UDP sockets;
+* Support for SSL/TLS
 
-## Features
+## Functionality
 
 * Creating a server on web sockets (websockets);
-* Creating HTTP server;
-* Stopping any server launched via netter.
+* Stopping any server launched via netter
 
 ## Documentation
 
-Launching a server is done using the command:
+Launching the server is done via the command:
 
-```powershell
+``` powershell
 netter start
 ```
 
-Stopping a server is done using the command:
+Stopping the server via the command:
 
 ```powershell
 netter stop
 ```
 
-[Documentation for Route Definition Language](RDL_DOCUMENTATION.md)
+[Route Definition Language Documentation](RDL_DOCUMENTATION_en.md) <!-- Assuming the RDL doc will also be translated -->
 
 ### Start
 
-The start command accepts the following parameters:
+The `start` command accepts the following parameters:
 
 * **--type**: server type: **websocket**, **tcp**, **udp**, **http**, **grpc**:
 
-```powershell
+``` powershell
 netter start --websocket
 ```
 
 * **--host**: server address:
 
-```powershell
+``` powershell
 netter start --websocket --host 127.0.0.1
 ```
 
 * **--port**: server port:
 
-```powershell
+``` powershell
 netter start --websocket --host 127.0.0.1 --port 808
 ```
 
-* **--protect**: whether to protect or not (default is no. If the flag is absent, it is also no):
+* **--protect**: whether to protect or not (default is no. Also no if the flag is absent):
 
 ```powershell
 netter start --websocket --host 127.0.0.1 --port 8080 --protect
 ```
 
-For the type parameter and server protection status, you do not need to specify anything other than the flag itself.
+For the type parameter and server protection status, you don't need to specify anything other than the flag itself.
 
 ### Stop
 
-The stop command will stop any running server:
+The `stop` command will stop any running server:
 
 ```powershell
 netter stop
@@ -80,74 +77,68 @@ netter stop
 #### How does it work?
 
 > [!NOTE]
-> When starting a server (netter start), a server state file is created, which specifies the host, **pid**, port, and protection status. This file helps maintain the existence of a running server and manage it during the process, as each new command you use = code execution from scratch. The running server will continue to work because it is built on asynchronous operations.\
-> The presence of the pid parameter in the state file helps terminate the server. It indicates the process ID of the server in the system. After using the stop command, netter "kills" the process (stops it).
+> When starting the server (`netter start`), a server state file is created, which specifies the host, **pid**, port, and the presence of the `protect` flag. This file helps to maintain the existence of the running server itself and manage it in the process, as each new command you use = running the code again. The running server will continue to work because it is built on asynchronous operations.
+> Terminating the server is aided by the presence of the `pid` parameter in the state file, which indicates the server process ID in the system. After using the `stop` command, netter "kills" the process (stops it).
 
 ## Installation
 
-In case of errors or questions about installing Rust, you can refer to the documentation in the [Rust book](https://rust-lang.github.io/book/ch01-01-installation.html).
-
 ### Windows
 
-* To install Rust on Windows, you need to go to [this link](https://www.rust-lang.org/tools/install) and download the language from there.
+Prerequisite: MSVC installed. If you don't have it yet, you can download it using the [guide](https://learn.microsoft.com/en-us/cpp/build/vscpp-step-0-installation?view=msvc-170)
 
-* Then you need to install netter:
+> [!WARN]
+> If you have Qt6 installed via the MSYS2 system (or another) for a different compiler (e.g., mingw) and you see an error when running `netter client`, you will have to manually download Qt for MSVC or move (or delete) your current Qt and run `netter client` again.
 
-```bash
+**Rust**:
+
+* Run the `install_rust.bat` script;
+
+Next, you have 2 options: install netter directly via cargo:
+
+```powershell
 cargo install netter
 ```
+
+or build the release version of the project from source:
+
+* Go to the project root;
+* Run `cargo build --release`;
+* (**OPTIONAL**): Add the path "path/to/netter/target/release" to your PATH.
+
+Then you can use netter directly (if you didn't complete the last step, only in the project folder):
+
+```powershell
+netter client
+```
+
+or any other netter command.
+
+**Desktop GUI**:
+
+* Run `netter client`;
+
+Then everything will happen automatically. It will start searching for MSVC, Qt6, Cmake, Ninja. If any of these (except MSVC) are not found, the [script](setup_dependencies.py) will download them automatically.
 
 ### Linux
 
-* Install Rust:
+**Rust**:
 
-```bash
-curl --proto '=https' --tlsv1.2 https://sh.rustup.rs -sSf | sh
-```
+* Run the `install_rust.sh` script
 
-* Install netter:
+Next, you have 2 options: install netter directly via cargo:
 
-```bash
+```powershell
 cargo install netter
 ```
 
-## Dependencies
+or build the release version of the project from source:
 
-Netter uses the following key libraries:
+* Go to the project root;
+* Run `cargo build --release`;
+* (**OPTIONAL**): Add the path "path/to/netter/target/release" to your PATH.
 
-*   [tokio](https://tokio.rs/): An asynchronous runtime for Rust.
-*   [hyper](https://hyper.rs/): An HTTP library for Rust.
+**Desktop GUI**:
 
-## Commands
+* Run `netter client`;
 
-### Start
-
-This command will start the server.
-
-Use:
-
-``` powershell
-netter start --http --host 127.0.0.1 --port 8080 --path routes.yaml
-```
-
-**Flags**:
-* **--http**: will start the server in HTTP mode;
-* **--websocket**: will start the server in websocket mode;
-* **--grpc**: will start the server in gRPC mode;
-* **--tcp**: will start the server in TCP mode;
-* **--udp**: will start the server in UDP mode;
-
-* **--host**: specifies the host for the server;
-* **--port**: specifies the port for the server:
-* **--path**: will specify the path to the configuration file for the server;
-* **--protect**: whether to use ssl/tls for the server. True or False;
-
-
-### Stop
-
-This command will stop the server.
-
-Use:
-``` powershell
-netter stop
-```
+Then everything will happen automatically. It will start searching for MSVC, Qt6, Cmake, Ninja. If any of these (except MSVC) are not found, the [script](setup_dependencies.py) will download them automatically.
