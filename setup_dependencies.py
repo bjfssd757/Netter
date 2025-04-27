@@ -312,10 +312,10 @@ def install_dependencies_linux():
     
     mingw_installed = check_command_exists('g++')
     if not mingw_installed:
-        print("Installing MinGW...")
+        print("Installing g++...")
         subprocess.run('sudo apt-get update && sudo apt-get install -y g++', shell=True, check=True)
     else:
-        print("✓ MinGW (g++) found!")
+        print("✓ g++ found!")
     
     cmake_installed = check_command_exists('cmake')
     if not cmake_installed:
@@ -332,45 +332,66 @@ def install_dependencies_linux():
         print("✓ Ninja found!")
     
     qt_version = get_qt_version()
-    target_qt_version = "6.5.3"
     
     if qt_version and qt_version.startswith('6.'):
         print(f"✓ Found installed Qt version {qt_version}!")
     else:
-        print("Qt 6 not found, installing latest available version...")
+        print("Qt 6 not found, installing via system packages...")
         
-        subprocess.run('pip3 install aqtinstall', shell=True, check=True)
-        
-        cmd = 'aqt list-qt linux desktop'
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-        
-        if result.returncode == 0:
-            output = result.stdout
-            qt6_versions = []
-            for line in output.splitlines():
-                match = re.search(r'6\.\d+\.\d+', line)
-                if match:
-                    qt6_versions.append(match.group(0))
+        try:
+            print("Installing Qt6 via apt...")
+            subprocess.run('sudo apt-get update', shell=True, check=True)
+            subprocess.run('sudo apt-get install -y qt6-base-dev qt6-declarative-dev qt6-tools-dev-tools', shell=True, check=True)
             
-            if qt6_versions:
-                qt6_versions.sort(key=lambda s: [int(u) for u in s.split('.')])
-                target_qt_version = qt6_versions[-1]
-                print(f"Found latest available Qt version: {target_qt_version}")
-        
-        qt_install_path = os.path.join(os.path.expanduser('~'), 'Qt')
-        print(f"Installing Qt {target_qt_version} in {qt_install_path}...")
-        
-        cmd = f'aqt install-qt linux desktop {target_qt_version} gcc_64 -O "{qt_install_path}" --modules qtbase qt5compat'
-        subprocess.run(cmd, shell=True, check=True)
-        
-        qt_bin_path = os.path.join(qt_install_path, target_qt_version, 'gcc_64', 'bin')
-        os.environ["PATH"] += os.pathsep + qt_bin_path
-        
-        bashrc_path = os.path.join(os.path.expanduser('~'), '.bashrc')
-        with open(bashrc_path, 'a') as f:
-            f.write(f'\nexport PATH="$PATH:{qt_bin_path}"\n')
+            qt_version = get_qt_version()
+            if qt_version and qt_version.startswith('6.'):
+                print(f"✓ Successfully installed Qt {qt_version} via system packages!")
+            else:
+                print("Warning: Qt installation via apt may not have succeeded")
+                
+        except Exception as e:
+            print(f"Error installing Qt via apt: {e}")
+            print("Creating a virtual environment for aqtinstall...")
             
-        print(f"Qt added to PATH in {bashrc_path}")
+            subprocess.run('sudo apt-get install -y python3-venv', shell=True, check=True)
+            
+            venv_path = os.path.join(os.path.expanduser('~'), '.venv-qt-installer')
+            subprocess.run(f'python3 -m venv {venv_path}', shell=True, check=True)
+            
+            subprocess.run(f'{venv_path}/bin/pip install aqtinstall', shell=True, check=True)
+            
+            cmd = f'{venv_path}/bin/aqt list-qt linux desktop'
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            
+            target_qt_version = "6.5.3"
+            
+            if result.returncode == 0:
+                output = result.stdout
+                qt6_versions = []
+                for line in output.splitlines():
+                    match = re.search(r'6\.\d+\.\d+', line)
+                    if match:
+                        qt6_versions.append(match.group(0))
+                
+                if qt6_versions:
+                    qt6_versions.sort(key=lambda s: [int(u) for u in s.split('.')])
+                    target_qt_version = qt6_versions[-1]
+                    print(f"Found latest available Qt version: {target_qt_version}")
+            
+            qt_install_path = os.path.join(os.path.expanduser('~'), 'Qt')
+            print(f"Installing Qt {target_qt_version} in {qt_install_path}...")
+            
+            cmd = f'{venv_path}/bin/aqt install-qt linux desktop {target_qt_version} gcc_64 -O "{qt_install_path}" --modules qtbase qt5compat'
+            subprocess.run(cmd, shell=True, check=True)
+            
+            qt_bin_path = os.path.join(qt_install_path, target_qt_version, 'gcc_64', 'bin')
+            os.environ["PATH"] += os.pathsep + qt_bin_path
+            
+            bashrc_path = os.path.join(os.path.expanduser('~'), '.bashrc')
+            with open(bashrc_path, 'a') as f:
+                f.write(f'\n# Added by Netter installer\nexport PATH="$PATH:{qt_bin_path}"\n')
+                
+            print(f"Qt added to PATH in {bashrc_path}")
 
 def update_cmake_file():
     """Update CMake file with automatic deployment settings"""

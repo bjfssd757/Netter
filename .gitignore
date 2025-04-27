@@ -14,3 +14,4 @@ SERVER_STATE.json
 /.venv
 /__pycache__
 /*.exe
+/mobile
