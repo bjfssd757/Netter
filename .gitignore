@@ -15,3 +15,6 @@ SERVER_STATE.json
 /__pycache__
 /*.exe
 /mobile
+/mobile2
+/mobile3
+/src/client/*

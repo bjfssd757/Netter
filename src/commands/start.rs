@@ -58,22 +58,14 @@ pub async fn start_parse(path: String) -> Result<(), Box<dyn std::error::Error>>
 pub fn start_client() -> Result<(), Box<dyn std::error::Error>> {
     info!("Starting client...");
 
-    if cfg!(target_os = "windows") {
-        Command::new("./setup_dependencies.bat")
-            .spawn()
-            .map_err(|e| {
-                error!("Failed to execute setup_dependencies.py: {e}");
-                "Failed to execute setup_dependencies.py"
-            })?;
-    } else {
-        Command::new("python3")
-            .arg("setup_dependencies.py")
-            .spawn()
-            .map_err(|e| {
-                error!("Failed to execute setup_dependencies.py: {e}");
-                "Failed to execute setup_dependencies.py"
-            })?;
-    }
+    Command::new("npm")
+        .arg("run")
+        .arg("tauri")
+        .spawn()
+        .map_err(|e| {
+            error!("Failed to start client: {e}");
+            "Failed to start client"
+        })?;
     Ok(())
 }
 

@@ -1,6 +1,0 @@
-#codeEditor {
-    color: #586e75;
-    background-color: #fdf6e3;
-    selection-background-color: #93a1a1;
-    selection-color: #002b36;
-}
