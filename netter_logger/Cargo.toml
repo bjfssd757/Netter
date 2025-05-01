@@ -1,0 +1,13 @@
+[package]
+name = "netter_logger"
+version = "0.1.0"
+edition = "2024"
+description = "Logger for Netter project"
+license = "MIT"
+repository = "https://github.com/bjfssd757/Netter"
+
+[dependencies]
+chrono = "0.4.41"
+colored = "3.0.0"
+fern = { version = "0.7.1", features = ["colored"] }
+log = "0.4.27"
