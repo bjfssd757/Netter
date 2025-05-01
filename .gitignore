@@ -18,3 +18,6 @@ SERVER_STATE.json
 /mobile2
 /mobile3
 /src/client/*
+/netter_core/target
+/netter_logger/target
+/netter_service/target

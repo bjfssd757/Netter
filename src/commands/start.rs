@@ -5,12 +5,10 @@ use crate::core::servers::http_core;
 use crate::core::servers::http_core::HTTP;
 use crate::core::language::parser;
 use std::process::Command;
-use std::process::ExitStatus;
 use log::{
     info,
     warn,
     error,
-    debug,
     trace
 };
 
