@@ -12,7 +12,6 @@ members = [
     "netter_daemon",
     "netter_logger",
     "netter_service",
-    "src/client/netterui/src-tauri",
 ]
 resolver = "2"
 
