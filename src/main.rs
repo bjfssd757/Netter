@@ -359,6 +359,7 @@ async fn install_service() -> Result<ExitCode, Box<dyn std::error::Error>> {
     {
         // Заглушка
         println!("(Unix) Service installation is not supported yet.");
+        Ok(ExitCode::SUCCESS)
     }
     #[cfg(not(any(windows, unix)))]
     {
