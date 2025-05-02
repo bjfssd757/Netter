@@ -1129,13 +1129,13 @@ dependencies = [
 
 [[package]]
 name = "netter"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "bincode",
  "clap",
  "derive_more",
  "log",
- "netter_core",
+ "netter_core 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "netter_logger 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde",
  "serde_json",
@@ -1145,6 +1145,35 @@ dependencies = [
 [[package]]
 name = "netter_core"
 version = "0.1.1"
+dependencies = [
+ "bincode",
+ "clap",
+ "derive_more",
+ "diesel",
+ "dotenvy",
+ "futures-util",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "lazy_static",
+ "log",
+ "netter_logger 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rustls",
+ "rustls-pemfile",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-rustls",
+ "tokio-tungstenite",
+ "toml",
+ "url",
+]
+
+[[package]]
+name = "netter_core"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4dc6b13e961294e592efc1745ae8bc95126ad07d799accbd3af26eb7bb5c8148"
 dependencies = [
  "bincode",
  "clap",
@@ -1206,7 +1235,7 @@ dependencies = [
  "hyper-util",
  "lazy_static",
  "log",
- "netter_core",
+ "netter_core 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "netter_logger 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "rustls",
  "rustls-pemfile",

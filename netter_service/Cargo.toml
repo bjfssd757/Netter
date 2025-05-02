@@ -4,11 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-bincode = { workspace = true }
-log = { workspace = true }
-netter_logger = { workspace = true }
-serde = { workspace = true }
-tokio = { workspace = true }
+log = "0.4.27"
+serde = { version="1.0.219", features=["derive"] }
+tokio = { version="1.44.2", features=["full"] }
+bincode = "1.3"
+netter_logger = "0.1.1"
 diesel = { version = "2.2.9", features = ["postgres"] }
 dotenvy = "0.15.7"
 futures-util = "0.3.31"
@@ -22,7 +22,7 @@ tokio-rustls = "0.26.2"
 tokio-tungstenite = "0.26.2"
 toml = "0.8.20"
 url = "2.5.4"
-netter_core = { path="../netter_core" }
+netter_core = "0.1.1"
 uuid = { version="1.16.0", features=["v4"] }
 chrono = "0.4.41"
 

@@ -1,6 +1,6 @@
 [package]
 name = "netter"
-version = "0.3.2"
+version = "0.3.3"
 edition = "2024"
 description = "Netter is a CLI tool for fast and easy server startup!"
 license = "MIT"
@@ -15,19 +15,8 @@ members = [
 resolver = "2"
 
 [dependencies]
-log = { workspace = true }
-clap = { workspace = true }
-netter_logger = { workspace = true }
-netter_core = { path="./netter_core" }
-serde = { workspace = true }
-derive_more = { workspace = true }
-tokio = { workspace = true }
-bincode = { workspace = true }
-serde_json = { workspace = true }
-
-[workspace.dependencies]
 netter_logger = "0.1.1"
-netter_core = "0.1.0"
+netter_core = "0.1.1"
 clap = { version="4.5.35", features=["derive"] }
 derive_more = { version="2.0.1", features=[ "full" ] }
 log = "0.4.27"
