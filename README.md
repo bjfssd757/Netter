@@ -1,144 +1,176 @@
 # Netter
 
-Netter is a CLI tool for quickly and easily launching servers.
+Netter is a tool for quickly and easily launching servers.
 
 ## Table of Contents
 
 * [Future](#future)
-* [Functionality](#functionality)
+* [Features](#features)
 * [Documentation](#documentation)
 * [Installation](#installation)
 
 ## Future
 
-* Support for complex server structures and routing;
-* Support for different types of servers: HTTP, gRPC, TCP/UDP sockets;
-* Support for SSL/TLS
+* Desktop client (UI);
+* Support for other server types (besides HTTP/HTTPS): WebSocket, **gRPC**, TCP/UDP sockets;
+* Ability to integrate Rust plugins into RDL.
 
-## Functionality
+## Features
 
-* Creating a server on web sockets (websockets);
-* Stopping any server launched via netter
+* Custom Route Definition Language (.rd) (hereinafter - RDL) - a config describing possible routes and the logic for handling requests to these routes;
+* Error handling in RDL;
+* TLS support;
+* Own daemon/service (depending on the OS);
 
 ## Documentation
 
-Launching the server is done via the command:
+### Install
 
-``` powershell
-netter start
-```
-
-Stopping the server via the command:
+To install the daemon or service, use the `install` command:
 
 ```powershell
-netter stop
+netter install
 ```
 
-[Route Definition Language Documentation](RDL_DOCUMENTATION_en.md) <!-- Assuming the RDL doc will also be translated -->
+> [!WARN]
+> The service executable (`netter_service`) must be in the same directory as the CLI.
+
+### Service-Start
+
+To start the service or daemon, use the `service-start` command:
+
+```powershell
+netter service-start
+```
+
+### Service-Stop
+
+To stop the service or daemon, use the `service-stop` command:
+
+```powershell
+netter service-stop
+```
+
+### Service-Status
+
+To get the status of the service or daemon, use the `service-status` command:
+
+```powershell
+netter service-status
+```
+
+### Uninstall
+
+To remove the service or daemon, use the `uninstall` command:
+
+```powershell
+netter uninstall
+```
+
+### Ping
+
+To check the connection with the service, use the `ping` command:
+
+```powershell
+netter ping
+```
+
+### List
+
+To get a list of running servers (including IDs), use the `list` command:
+
+```powershell
+netter list
+```
 
 ### Start
 
-The `start` command accepts the following parameters:
-
-* **--type**: server type: **websocket**, **tcp**, **udp**, **http**, **grpc**:
-
-``` powershell
-netter start --websocket
-```
-
-* **--host**: server address:
-
-``` powershell
-netter start --websocket --host 127.0.0.1
-```
-
-* **--port**: server port:
-
-``` powershell
-netter start --websocket --host 127.0.0.1 --port 808
-```
-
-* **--protect**: whether to protect or not (default is no. Also no if the flag is absent):
+Start a server using the `start` command and the `--config` flag, which takes the path to the .rd server configuration file:
 
 ```powershell
-netter start --websocket --host 127.0.0.1 --port 8080 --protect
+netter start --config path/to/file.rd
 ```
-
-For the type parameter and server protection status, you don't need to specify anything other than the flag itself.
 
 ### Stop
 
-The `stop` command will stop any running server:
+Stop a server using the `stop` command and the `-i` (or `--id`) flag, which takes the server ID:
 
 ```powershell
-netter stop
+netter stop -i id
 ```
 
-#### How does it work?
-
-> [!NOTE]
-> When starting the server (`netter start`), a server state file is created, which specifies the host, **pid**, port, and the presence of the `protect` flag. This file helps to maintain the existence of the running server itself and manage it in the process, as each new command you use = running the code again. The running server will continue to work because it is built on asynchronous operations.
-> Terminating the server is aided by the presence of the `pid` parameter in the state file, which indicates the server process ID in the system. After using the `stop` command, netter "kills" the process (stops it).
+[Route Definition Language Documentation](RDL_DOCUMENTATION_ru.md)
 
 ## Installation
 
 ### Windows
 
-Prerequisite: MSVC installed. If you don't have it yet, you can download it using the [guide](https://learn.microsoft.com/en-us/cpp/build/vscpp-step-0-installation?view=msvc-170)
+**Installation from Release Assets:**
 
-> [!WARN]
-> If you have Qt6 installed via the MSYS2 system (or another) for a different compiler (e.g., mingw) and you see an error when running `netter client`, you will have to manually download Qt for MSVC or move (or delete) your current Qt and run `netter client` again.
+* Download the archive for Windows;
+* Unpack it in a convenient location;
+* Navigate to the directory where you unpacked the archive;
+* Run the command `./netter install`;
+* If the previous step was successful, run the command `netter service-start`;
+* Enjoy!
 
-**Rust**:
+**Building from Source Code:**
 
-* Run the `install_rust.bat` script;
+*Prerequisites: Rust must be installed on your device. You can download it either from the official website or using [install_rust.bat](install_rust.bat)*
 
-Next, you have 2 options: install netter directly via cargo:
-
-```powershell
-cargo install netter
-```
-
-or build the release version of the project from source:
-
-* Go to the project root;
-* Run `cargo build --release`;
-* (**OPTIONAL**): Add the path "path/to/netter/target/release" to your PATH.
-
-Then you can use netter directly (if you didn't complete the last step, only in the project folder):
+* Clone the project: `git clone https://github.com/bjfssd757/netter`;
+* Navigate to the project directory;
+* Run the following commands:
 
 ```powershell
-netter client
+cargo build --release; cargo build --release -p netter_service; cd target/release
 ```
 
-or any other netter command.
+> [!INFO]
+> `cargo build --release` will create the CLI executable `netter` in `target/release`;
+> `cargo build --release -p netter_service` will create the service executable `netter_service` in `target/release`
 
-**Desktop GUI**:
+* After executing these commands, you will be in the build directory (`target/release`). Execute the following commands:
 
-* Run `netter client`;
+```powershell
+./netter install; ./netter service-start
+```
 
-Then everything will happen automatically. It will start searching for MSVC, Qt6, Cmake, Ninja. If any of these (except MSVC) are not found, the [script](setup_dependencies.py) will download them automatically.
+* These commands will create and start the `NetterService` service. To check the CLI connection with the service: `./netter ping`
+* **Optional**: Add the path to `netter.exe` to your PATH environment variable.
 
 ### Linux
 
-**Rust**:
+**Installation from Release Assets:**
 
-* Run the `install_rust.sh` script
+* Download the archive for Linux;
+* Unpack it in a convenient location;
+* Navigate to the directory where you unpacked the archive;
+* Run the command `./netter install`;
+* If the previous step was successful, run the command `netter service-start`;
+* Enjoy!
 
-Next, you have 2 options: install netter directly via cargo:
+**Building from Source Code:**
+
+*Prerequisites: Rust must be installed on your device. You can download it either from the official website or using [install_rust.sh](install_rust.sh)*
+
+* Clone the project: `git clone https://github.com/bjfssd757/netter`;
+* Navigate to the project directory;
+* Run the following commands:
 
 ```powershell
-cargo install netter
+cargo build --release; cargo build --release -p netter_service; cd target/release
 ```
 
-or build the release version of the project from source:
+> [!INFO]
+> `cargo build --release` will create the CLI executable `netter` in `target/release`;
+> `cargo build --release -p netter_service` will create the daemon executable `netter_service` in `target/release`
 
-* Go to the project root;
-* Run `cargo build --release`;
-* (**OPTIONAL**): Add the path "path/to/netter/target/release" to your PATH.
+* After executing these commands, you will be in the build directory (`target/release`). Execute the following commands:
 
-**Desktop GUI**:
+```powershell
+./netter install; ./netter service-start
+```
 
-* Run `netter client`;
-
-Then everything will happen automatically. It will start searching for MSVC, Qt6, Cmake, Ninja. If any of these (except MSVC) are not found, the [script](setup_dependencies.py) will download them automatically.
+* These commands will create and start the daemon. To check the CLI connection with the daemon: `./netter ping`
+* **Optional**: Add the path to the `netter` executable to your PATH environment variable.
