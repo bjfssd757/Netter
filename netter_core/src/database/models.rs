@@ -1,6 +1,6 @@
 use diesel::prelude::*;
-use crate::core::database::schema::users;
-use crate::core::database::schema::users::dsl::*;
+use crate::database::schema::users;
+use crate::database::schema::users::dsl::*;
 
 #[derive(Queryable, Debug)]
 pub struct User {

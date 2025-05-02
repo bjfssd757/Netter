@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::fmt; 
 use log::{error, trace, warn, debug};
-use crate::core::servers::http_core::TlsConfig;
-use crate::core::language::operators::Types;
+use crate::servers::http_core::TlsConfig;
+use crate::language::operators::Types;
 
 
 #[allow(dead_code)] 
@@ -510,9 +510,9 @@ impl Interpreter {
         }
     }
     
-    pub fn interpret(&mut self, ast: &crate::core::language::lexer::AstNode) -> Result<(), String> {
+    pub fn interpret(&mut self, ast: &crate::language::lexer::AstNode) -> Result<(), String> {
         match ast {
-            crate::core::language::lexer::AstNode::Program(statements) => {
+            crate::language::lexer::AstNode::Program(statements) => {
                 for stmt in statements {
                     match self.interpret(stmt) { 
                         Ok(_) => {}, 
@@ -525,10 +525,10 @@ impl Interpreter {
                 }
                 Ok(()) 
             },
-            crate::core::language::lexer::AstNode::ServerConfig { routes, tls_config, global_error_handler } => {                
+            crate::language::lexer::AstNode::ServerConfig { routes, tls_config, global_error_handler } => {                
                 if let Some(tls) = tls_config {
                     match &**tls { 
-                        crate::core::language::lexer::AstNode::TlsConfig { enabled, cert_path, key_path } => {
+                        crate::language::lexer::AstNode::TlsConfig { enabled, cert_path, key_path } => {
                             if *enabled {
                                 self.tls_config = Some(TlsConfig {
                                     enabled: *enabled,
@@ -546,7 +546,7 @@ impl Interpreter {
                 }
                 if let Some(handler) = global_error_handler {
                     match &**handler {
-                        crate::core::language::lexer::AstNode::GlobalErrorHandler { error_var, body } => {
+                        crate::language::lexer::AstNode::GlobalErrorHandler { error_var, body } => {
                             match self.convert_ast_to_actions(body) {
                                 Ok(actions) => {
                                     self.global_error_handler = Some(ErrorHandler {
@@ -568,7 +568,7 @@ impl Interpreter {
                 }
                 Ok(()) 
             },
-            crate::core::language::lexer::AstNode::Route { path, method, body, on_error } => {
+            crate::language::lexer::AstNode::Route { path, method, body, on_error } => {
                 trace!("Обработка маршрута: {} {}", method, path); 
                 trace!("Тип тела маршрута: {:?}", body); 
                 
@@ -582,7 +582,7 @@ impl Interpreter {
 
                 let error_handler = if let Some(on_err) = on_error {
                     match &**on_err {
-                        crate::core::language::lexer::AstNode::ErrorHandlerBlock { error_var, body } => {
+                        crate::language::lexer::AstNode::ErrorHandlerBlock { error_var, body } => {
                             let actions = self.convert_ast_to_actions(body)?;
                             Some(ErrorHandler {
                                 error_var: error_var.clone(),
@@ -614,9 +614,9 @@ impl Interpreter {
         }
     }
     
-    fn convert_ast_to_actions(&self, node: &crate::core::language::lexer::AstNode) -> Result<Vec<RouteAction>, String> {
+    fn convert_ast_to_actions(&self, node: &crate::language::lexer::AstNode) -> Result<Vec<RouteAction>, String> {
         match node {
-            crate::core::language::lexer::AstNode::Block(statements) => {
+            crate::language::lexer::AstNode::Block(statements) => {
                 let mut actions = Vec::new(); 
                 for stmt in statements {
                     let action = self.convert_statement_to_action(stmt)?; 
@@ -631,13 +631,13 @@ impl Interpreter {
         }
     }
     
-    fn convert_statement_to_action(&self, node: &crate::core::language::lexer::AstNode) -> Result<RouteAction, String> {
+    fn convert_statement_to_action(&self, node: &crate::language::lexer::AstNode) -> Result<RouteAction, String> {
         match node {
-            crate::core::language::lexer::AstNode::VarDeclaration { name, value } => {
+            crate::language::lexer::AstNode::VarDeclaration { name, value } => {
                 let value_action = self.convert_expression_to_action(value)?;
                 Ok(RouteAction::VarDeclaration(name.clone(), Box::new(value_action)))
             },
-            crate::core::language::lexer::AstNode::IfStatement { condition, then_branch, else_branch } => {
+            crate::language::lexer::AstNode::IfStatement { condition, then_branch, else_branch } => {
                 let condition_action = self.convert_expression_to_action(condition)?;
                 
                 let then_actions = self.convert_ast_to_actions(then_branch)?;
@@ -645,7 +645,7 @@ impl Interpreter {
                 
                 let else_boxed = if let Some(else_stmt) = else_branch {
                     match &**else_stmt { 
-                        crate::core::language::lexer::AstNode::IfStatement { .. } => {
+                        crate::language::lexer::AstNode::IfStatement { .. } => {
                             let else_if_action = self.convert_statement_to_action(else_stmt)?;
                             Some(vec![Box::new(else_if_action)]) 
                         },
@@ -664,7 +664,7 @@ impl Interpreter {
                     else_branch: else_boxed,
                 })
             },
-            crate::core::language::lexer::AstNode::FunctionCall { object, name, args, try_operator, unwrap_operator } => {
+            crate::language::lexer::AstNode::FunctionCall { object, name, args, try_operator, unwrap_operator } => {
                 let mut action_args = Vec::new(); 
                 for arg in args {
                     let arg_action = self.convert_expression_to_action(arg)?;
@@ -689,14 +689,14 @@ impl Interpreter {
         }
     }
     
-    fn extract_identifier_name(&self, node: &crate::core::language::lexer::AstNode) -> Result<String, String> {
+    fn extract_identifier_name(&self, node: &crate::language::lexer::AstNode) -> Result<String, String> {
         match node {
-            crate::core::language::lexer::AstNode::Identifier(name) => Ok(name.clone()),
-            crate::core::language::lexer::AstNode::PropertyAccess { object, property } => {
+            crate::language::lexer::AstNode::Identifier(name) => Ok(name.clone()),
+            crate::language::lexer::AstNode::PropertyAccess { object, property } => {
                 let obj_name = self.extract_identifier_name(object)?;
                 Ok(format!("{}.{}", obj_name, property)) 
             },
-            crate::core::language::lexer::AstNode::FunctionCall { object, name, .. } => { 
+            crate::language::lexer::AstNode::FunctionCall { object, name, .. } => { 
                 if let Some(obj) = object {
                     let obj_name = self.extract_identifier_name(obj)?;
                     Ok(format!("{}.{}", obj_name, name))
@@ -704,25 +704,25 @@ impl Interpreter {
                     Ok(name.clone())
                 }
             },
-            crate::core::language::lexer::AstNode::BinaryOp { .. } => { 
+            crate::language::lexer::AstNode::BinaryOp { .. } => { 
                 Err("Бинарная операция не может быть использована как идентификатор!".to_string())
             },
             _ => Err(format!("Ожидается идентификатор, получено: {:?}", node).to_string()),
         }
     }
     
-    fn convert_expression_to_action(&self, node: &crate::core::language::lexer::AstNode) -> Result<RouteAction, String> {
+    fn convert_expression_to_action(&self, node: &crate::language::lexer::AstNode) -> Result<RouteAction, String> {
         match node {
-            crate::core::language::lexer::AstNode::StringLiteral(value) => {
+            crate::language::lexer::AstNode::StringLiteral(value) => {
                 Ok(RouteAction::StringLiteral(value.clone()))
             },
-            crate::core::language::lexer::AstNode::NumberLiteral(value) => {
+            crate::language::lexer::AstNode::NumberLiteral(value) => {
                 Ok(RouteAction::NumberLiteral(*value)) 
             }
-            crate::core::language::lexer::AstNode::Identifier(name) => {
+            crate::language::lexer::AstNode::Identifier(name) => {
                 Ok(RouteAction::Identifier(name.clone()))
             },
-            crate::core::language::lexer::AstNode::FunctionCall { object, name, args, try_operator, unwrap_operator } => {
+            crate::language::lexer::AstNode::FunctionCall { object, name, args, try_operator, unwrap_operator } => {
                 let mut action_args = Vec::new();
                 for arg in args {
                     let arg_action = self.convert_expression_to_action(arg)?;
@@ -743,14 +743,14 @@ impl Interpreter {
                     unwrap_operator: *unwrap_operator,
                 })
             },
-            crate::core::language::lexer::AstNode::PropertyAccess { object, property } => {
+            crate::language::lexer::AstNode::PropertyAccess { object, property } => {
                 let obj_action = self.convert_expression_to_action(object)?;
                 Ok(RouteAction::PropertyAccess {
                     object: Box::new(obj_action), 
                     property: property.clone(),
                 })
             },
-            crate::core::language::lexer::AstNode::BinaryOp { left, operator, right } => {
+            crate::language::lexer::AstNode::BinaryOp { left, operator, right } => {
                 let left_action = self.convert_expression_to_action(left)?;
                 let right_action = self.convert_expression_to_action(right)?;
 

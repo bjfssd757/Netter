@@ -2,7 +2,6 @@ use serde::{Deserialize, Serialize};
 use tokio::net::TcpListener;
 use tokio_tungstenite::accept_async;
 use futures_util::{StreamExt, SinkExt};
-use crate::state::save_state;
 
 #[allow(async_fn_in_trait)]
 pub trait WebSocketTrait {
@@ -39,11 +38,11 @@ impl WebSocketTrait for Server {
                 .await
                 .map_err(|e| format!("Failed to bind: {e}"))?;
 
-            save_state(
-                String::from("websocket"),
-                self.host.clone(),
-                self.port.clone()
-            )?;
+            // save_state(
+            //     String::from("websocket"),
+            //     self.host.clone(),
+            //     self.port.clone()
+            // )?;
 
             println!("Server running on {}", &addr);
 

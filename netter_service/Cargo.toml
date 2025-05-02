@@ -23,4 +23,5 @@ tokio-rustls = "0.26.2"
 tokio-tungstenite = "0.26.2"
 toml = "0.8.20"
 url = "2.5.4"
-netter_core = { workspace = true }
+netter_core = { path="../netter_core" }
+uuid = { version="1.16.0", features=["v4"] }

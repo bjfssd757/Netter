@@ -1,8 +1,8 @@
-use crate::core::language::operators::{
+use crate::language::operators::{
     Token,
     TokenType,
 };
-use crate::core::language::lexer::{
+use crate::language::lexer::{
     AstNode,
     Lexer,
 };

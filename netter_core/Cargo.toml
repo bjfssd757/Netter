@@ -7,5 +7,25 @@ license = "MIT"
 repository = "https://github.com/bjfssd757/Netter"
 
 [dependencies]
-log = "0.4.27"
-serde = { version = "1.0.219", features = ["derive"] }
+diesel = { version = "2.2.9", features = ["postgres"] }
+dotenvy = "0.15.7"
+futures-util = "0.3.31"
+http-body-util = "0.1.3"
+hyper = { version="1.6.0", features=["full"] }
+hyper-util = { version="0.1.11", features=["full"] }
+lazy_static = "1.5.0"
+rustls = "0.23.26"
+rustls-pemfile = "2.2.0"
+tokio-rustls = "0.26.2"
+tokio-tungstenite = "0.26.2"
+toml = "0.8.20"
+url = "2.5.4"
+log = { workspace = true }
+clap = { workspace = true }
+netter_logger = { workspace = true }
+netter_core = { workspace = true }
+serde = { workspace = true }
+derive_more = { workspace = true }
+tokio = { workspace = true }
+bincode = { workspace = true }
+serde_json = { workspace = true }
