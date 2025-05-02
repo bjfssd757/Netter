@@ -416,7 +416,7 @@ async fn uninstall_service() -> Result<ExitCode, Box<dyn std::error::Error>> {
         run_command("sudo", &["systemctl", "reset-failed"])?;
 
         println!("Daemon 'netterd' uninstalled successfully.");
-        println!("You might want to manually remove state files ({}) and log files.", STATE_FILE_PATH.display());
+        println!("You might want to manually remove state files ({}) and log files.", CLI_LOG_DIR);
         Ok(ExitCode::SUCCESS)
    }
    #[cfg(not(any(windows, unix)))]
