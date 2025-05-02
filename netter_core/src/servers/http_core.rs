@@ -274,6 +274,7 @@ pub async fn handle_http_request(
     response_result
 }
 
+#[allow(dead_code)]
 fn empty() -> BoxBody<Bytes, hyper::Error> {
     Empty::<Bytes>::new()
         .map_err(|never| match never {}) 

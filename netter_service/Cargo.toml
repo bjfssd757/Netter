@@ -3,8 +3,7 @@ name = "netter_service"
 version = "0.1.0"
 edition = "2024"
 
-[dependencies]  
-windows-service = "0.8.0"
+[dependencies]
 bincode = { workspace = true }
 log = { workspace = true }
 netter_logger = { workspace = true }
@@ -25,3 +24,10 @@ toml = "0.8.20"
 url = "2.5.4"
 netter_core = { path="../netter_core" }
 uuid = { version="1.16.0", features=["v4"] }
+chrono = "0.4.41"
+
+[target.'cfg(windows)'.dependencies]
+windows-service = "0.8.0"
+
+[target.'cfg(unix)'.dependencies]
+directories-next = "2.0"

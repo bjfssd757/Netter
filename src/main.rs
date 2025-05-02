@@ -6,6 +6,7 @@ use log::{
     error,
     trace,
     debug,
+    warn,
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -154,8 +155,7 @@ async fn main() -> ExitCode {
             error!("Communication error with service: {}", e);
             eprintln!("\nError: Could not connect to the Netter service.");
             #[cfg(windows)] { eprintln!("You can check its status using 'sc.exe query NetterService' or start it with 'sc.exe start NetterService'."); }
-            // #[cfg(unix)] { eprintln!("You can check its status using 'systemctl status netterd' or start it with 'systemctl start netterd'."); }
-            #[cfg(unix)] { eprintln!("DAEMON NOT SUPPORTED FOR THIS TIME"); }
+            #[cfg(unix)] { eprintln!("You can check its status using 'systemctl status netterd' or start it with 'systemctl start netterd'."); }
             eprintln!("Details: {}", e);
             eprintln!("Details: {}", e);
             ExitCode::FAILURE
@@ -357,8 +357,96 @@ async fn install_service() -> Result<ExitCode, Box<dyn std::error::Error>> {
     }
     #[cfg(unix)]
     {
-        // Заглушка
-        println!("(Unix) Service installation is not supported yet.");
+        println!("(Unix) This command requires root privileges (sudo).");
+        println!("Attempting basic installation (copy executable and create systemd unit)...");
+
+        let current_cli_exe = std::env::current_exe()?;
+        let service_exe_source = current_cli_exe
+            .parent()
+            .ok_or("Cannot find parent directory of CLI")?
+            .join("netter_service");
+
+        if !service_exe_source.exists() {
+            return Err(format!(
+                "Daemon executable 'netter_service' not found in the directory: {}",
+                service_exe_source
+                    .parent()
+                    .unwrap_or(Path::new("."))
+                    .display()
+            )
+            .into());
+        }
+        let service_source_str = service_exe_source
+            .to_str()
+            .ok_or("Invalid source path encoding")?;
+
+        let service_dest_str = "/usr/local/bin/netter_daemon";
+        run_os_command(
+            "sudo",
+            &["cp", "-v", service_source_str, service_dest_str],
+            "copy daemon executable",
+        )?;
+        run_os_command("sudo", &["chmod", "+x", service_dest_str], "make executable")?;
+
+        if !is_systemd_running() {
+            warn!("Systemd not detected on this system!");
+            println!(
+                "\nDaemon executable copied to {}.",
+                service_dest_str.clone()
+            );
+            println!("Automatic service managment is not available.");
+            println!("You need to manage the 'netter_daemon' process manually using your system's init system (e.g., SysVinit, OpenRC) or run it in the background (e.g., 'nohup {} &').", service_dest_str);
+        }
+
+        let unit_content = format!(
+            r#"[Unit]
+Description=Netter Service Daemon
+After=network.target
+
+[Service]
+Type=simple
+ExecStart={}
+WorkingDirectory={}
+Restart=on-failure
+User=nobody
+Group=nogroup
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+"#,
+            service_dest_str,
+            Path::new(service_dest_str)
+                .parent()
+                .unwrap()
+                .to_str()
+                .unwrap()
+        );
+        let unit_file_path = "/etc/systemd/system/netterd.service";
+        println!("Creating systemd unit file at {}...", unit_file_path);
+        let echo_cmd = std::process::Command::new("echo")
+            .arg(unit_content)
+            .stdout(std::process::Stdio::piped())
+            .spawn()?;
+        let tee_cmd = std::process::Command::new("sudo")
+            .arg("tee")
+            .arg(unit_file_path)
+            .stdin(echo_cmd.stdout.ok_or("Failed to pipe echo output")?)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .status()?;
+
+        if !tee_cmd.success() {
+            return Err(format!("Failed to write systemd unit file '{}'", unit_file_path).into());
+        }
+        println!("Systemd unit file created.");
+
+        run_os_command("sudo", &["systemctl", "daemon-reload"], "reload systemd")?;
+        run_os_command("sudo", &["systemctl", "enable", "netterd"], "enable daemon")?;
+
+        println!("\nDaemon 'netterd' installed and enabled successfully.");
+        println!("Use 'netter service-start' to start the daemon.");
         Ok(ExitCode::SUCCESS)
     }
     #[cfg(not(any(windows, unix)))]
@@ -391,33 +479,53 @@ async fn uninstall_service() -> Result<ExitCode, Box<dyn std::error::Error>> {
    }
    #[cfg(unix)]
    {
-        println!("(Linux) Disabling, stopping, and removing 'netterd' systemd service...");
-        println!("This command needs root privileges (sudo).");
+        println!("(Unix) This command requires root privileges (sudo).");
 
-        
-        let _ = run_command("sudo", &["systemctl", "disable", "netterd"]);
-        
-        let _ = run_command("sudo", &["systemctl", "stop", "netterd"]);
+        if is_systemd_running() {
+            println!("Systemd detected. Disabling and stopping 'netterd' service...");
+            let _ = run_os_command("sudo", &["systemctl", "disable", "netterd"], "disable daemon");
+            let _ = run_os_command("sudo", &["systemctl", "stop", "netterd"], "stop daemon");
+        } else {
+            warn!("Systemd not detected. Skipping systemctl disable/stop.");
+            println!("If the daemon is running, you need to stop the 'netter_daemon' process manually (e.g., using 'pkill netter_daemon').");
+        }
 
-        
         let unit_file_dest = Path::new("/etc/systemd/system/netterd.service");
         if unit_file_dest.exists() {
-            run_command("sudo", &["rm", "-v", unit_file_dest.to_str().unwrap()])?;
-        } else { println!("Unit file not found (already removed?)."); }
+            run_os_command(
+                "sudo",
+                &["rm", "-v", unit_file_dest.to_str().unwrap()],
+                "remove systemd unit file",
+            )?;
+        } else {
+            println!("Systemd unit file not found (already removed or not installed via systemd?).");
+        }
 
-        
         let daemon_dest = Path::new("/usr/local/bin/netter_daemon");
         if daemon_dest.exists() {
-             run_command("sudo", &["rm", "-v", daemon_dest.to_str().unwrap()])?;
-        } else { println!("Daemon executable not found (already removed?)."); }
+            run_os_command(
+                "sudo",
+                &["rm", "-v", daemon_dest.to_str().unwrap()],
+                "remove daemon executable",
+            )?;
+        } else {
+            println!("Daemon executable not found (already removed?).");
+        }
 
-        
-        run_command("sudo", &["systemctl", "daemon-reload"])?;
-        
-        run_command("sudo", &["systemctl", "reset-failed"])?;
+        if is_systemd_running() {
+            run_os_command("sudo", &["systemctl", "daemon-reload"], "reload systemd")?;
+            run_os_command(
+                "sudo",
+                &["systemctl", "reset-failed"],
+                "reset failed units",
+            )?;
+        }
 
-        println!("Daemon 'netterd' uninstalled successfully.");
-        println!("You might want to manually remove state files ({}) and log files.", CLI_LOG_DIR);
+        println!("\nDaemon 'netterd' uninstalled successfully.");
+        println!(
+            "You might want to manually remove state files ({}) and log files.",
+            CLI_LOG_DIR
+        );
         Ok(ExitCode::SUCCESS)
    }
    #[cfg(not(any(windows, unix)))]
@@ -432,8 +540,8 @@ async fn start_service() -> Result<ExitCode, Box<dyn std::error::Error>> {
        run_os_command("sc", &["start", "NetterService"], "start service")
    }
    #[cfg(unix)] {
-       println!("This command may require root privileges (sudo).");
-       run_os_command("sudo", &["systemctl", "start", "netterd"], "start daemon")
+        println!("(Unix) This command may require root privileges (sudo).");
+        run_os_command("sudo", &["systemctl", "start", "netterd"], "start daemon")
    }
    #[cfg(not(any(windows, unix)))]
    { Err("Service start is not supported on this OS.".into()) }
@@ -445,8 +553,8 @@ async fn stop_service() -> Result<ExitCode, Box<dyn std::error::Error>> {
        run_os_command("sc", &["stop", "NetterService"], "stop service")
    }
     #[cfg(unix)] {
-       println!("This command may require root privileges (sudo).");
-       run_os_command("sudo", &["systemctl", "stop", "netterd"], "stop daemon")
+        println!("(Unix) This command may require root privileges (sudo).");
+        run_os_command("sudo", &["systemctl", "stop", "netterd"], "stop daemon")
    }
    #[cfg(not(any(windows, unix)))]
    { Err("Service stop is not supported on this OS.".into()) }
@@ -461,7 +569,14 @@ async fn query_service_status() -> Result<ExitCode, Box<dyn std::error::Error>> 
         }
     }
     #[cfg(unix)] {
-        let _ = run_command("systemctl", &["status", "netterd"]);
+        println!("> systemctl status netterd");
+        let status = std::process::Command::new("systemctl")
+            .args(["status", "netterd"])
+            .status()?;
+        println!(
+            "(Command finished with status: {})",
+            status.code().unwrap_or(-1)
+        );
         Ok(ExitCode::SUCCESS)
     }
     #[cfg(not(any(windows, unix)))]
@@ -496,4 +611,9 @@ fn run_os_command(command: &str, args: &[&str], action_desc: &str) -> Result<Exi
          error!("Failed to {}: {}", action_desc, stderr);
          Err(format!("Failed to {}: {}", action_desc, stderr).into())
      }
+}
+
+#[cfg(unix)]
+fn is_systemd_running() -> bool {
+    Path::new("/run/systemd/system").exists()
 }

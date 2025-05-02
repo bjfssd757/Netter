@@ -9,7 +9,6 @@ repository = "https://github.com/bjfssd757/Netter"
 [workspace]
 members = [
     "netter_core",
-    "netter_daemon",
     "netter_logger",
     "netter_service",
 ]
