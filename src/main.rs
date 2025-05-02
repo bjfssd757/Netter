@@ -5,13 +5,12 @@ use log::{
     info,
     error,
     trace,
-    warn,
     debug,
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 #[cfg(windows)]
-use tokio::net::windows::named_pipe;
+use tokio::net::windows::named_pipe::{ClientOptions, NamedPipeClient};
 #[cfg(unix)]
 use tokio::net::UnixStream;
 
@@ -24,9 +23,9 @@ use netter_core::{
 };
 
 #[cfg(windows)]
-const PIPE_NAME: &str = r"\\.\pipe\MyNetterServicePipe";
+const IPC_PATH: &str = r"\\.\pipe\MyNetterServicePipe";
 #[cfg(unix)]
-const PIPE_NAME: &str = "/tmp/netterd/netterd.sock";
+const IPC_PATH: &str = "/tmp/netterd/netterd.sock";
 
 const CLI_LOG_DIR: &str = "logs_cli";
 
@@ -203,36 +202,46 @@ async fn create_service_command(command: Commands) -> Result<Command, Box<dyn st
 
 
 async fn send_command_to_service(command: Command) -> Result<Response, Box<dyn std::error::Error>> {
-    trace!("Attempting to connect to pipe: {}", PIPE_NAME);
+    trace!("Attempting to connect to IPC: {}", IPC_PATH);
 
-    let mut pipe = match named_pipe::ClientOptions::new().open(PIPE_NAME) {
-        Ok(pipe) => { trace!("Successfully connected to pipe."); pipe },
-        Err(e) => {
-            error!("Failed to connect to service pipe '{}': {}", PIPE_NAME, e);
-            return Err(format!("Could not connect to Netter service ('{}'). Ensure the service is running. OS error: {}", PIPE_NAME, e).into());
-        }
-    };
+    #[cfg(windows)]
+    let mut stream = ClientOptions::new()
+        .open(IPC_PATH)
+        .map_err(|e| format!("Failed to open pipe '{}': {}", IPC_PATH, e))?;
+    #[cfg(unix)]
+    let mut stream = UnixStream::connect(IPC_PATH)
+        .await
+        .map_err(|e| format!("Failed to connect to socket '{}': {}", IPC_PATH, e))?;
 
-    let serialized_command = bincode::serialize(&command)?;
-    trace!("Serialized command ({} bytes)", serialized_command.len());
+    trace!("Successfully connected to IPC.");
 
-    pipe.write_all(&serialized_command).await?;
-    pipe.flush().await.map_err(|e| warn!("Pipe flush error after send (non-critical): {}", e)).ok();
-    trace!("Command sent to service. Awaiting response...");
+    let encoded_command = bincode::serialize(&command)?;
+    trace!("Serialized command ({} bytes)", encoded_command.len());
 
-    let mut buffer = Vec::with_capacity(1024);
-    let n = pipe.read_to_end(&mut buffer).await?;
-    if n == 0 {
-        warn!("Service closed connection without sending data.");
-        return Err("Service did not send a response.".into());
+    let command_size = encoded_command.len() as u32;
+    stream.write_all(&command_size.to_be_bytes()).await?;
+    stream.write_all(&encoded_command).await?;
+    stream.flush().await?;
+
+    trace!("Command sent to service/daemon. Awaiting response...");
+
+    let mut size_buf = [0u8; 4];
+    stream.read_exact(&mut size_buf).await
+        .map_err(|e| format!("Failed to read response size header: {}", e))?;
+    let response_size = u32::from_be_bytes(size_buf) as usize;
+    trace!("Response size header indicates {} bytes.", response_size);
+
+    if response_size > 10 * 1024 * 1024 {
+        return Err(format!("Response size {} exceeds limit", response_size).into());
     }
-    trace!("Response received ({} bytes).", n);
 
-    let response: Response = bincode::deserialize(&buffer)
-        .map_err(|e| {
-            error!("Failed to deserialize response from service: {}", e);
-            format!("Service sent an invalid response ({} bytes): '{}'. Error: {}", buffer.len(), String::from_utf8_lossy(&buffer), e)
-        })?;
+    let mut response_buffer = vec![0u8; response_size];
+    stream.read_exact(&mut response_buffer).await
+         .map_err(|e| format!("Failed to read response body (expected {} bytes): {}", response_size, e))?;
+
+    trace!("Response received ({} bytes).", response_buffer.len());
+
+    let response: Response = bincode::deserialize(&response_buffer)?;
     trace!("Deserialized response: {:?}", response);
 
     Ok(response)
