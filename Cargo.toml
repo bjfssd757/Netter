@@ -26,7 +26,7 @@ bincode = { workspace = true }
 serde_json = { workspace = true }
 
 [workspace.dependencies]
-netter_logger = "0.1.0"
+netter_logger = "0.1.1"
 netter_core = "0.1.0"
 clap = { version="4.5.35", features=["derive"] }
 derive_more = { version="2.0.1", features=[ "full" ] }
