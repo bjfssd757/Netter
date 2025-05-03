@@ -258,6 +258,10 @@ impl Lexer {
                         "key_path" => Ok(Token { token_type: TokenType::KeyPath, line, column }),
                         "global_error_handler" => Ok(Token { token_type: TokenType::GlobalErrorHandler, line, column }),
                         "onError" => Ok(Token { token_type: TokenType::OnError, line, column }),
+                        "config" => Ok(Token { token_type: TokenType::Config, line, column }),
+                        "type" => Ok(Token { token_type: TokenType::TypeName, line, column }),
+                        "host" => Ok(Token { token_type: TokenType::Host, line, column }),
+                        "port" => Ok(Token { token_type: TokenType::Port, line, column }),
                         "GET" | "POST" | "PUT" | "DELETE" | "PATCH" | "HEAD" | "OPTIONS" => 
                             Ok(Token { token_type: TokenType::HttpMethod(ident), line, column }),
                         _ => Ok(Token { token_type: TokenType::Identifier(ident), line, column }),
@@ -340,6 +344,7 @@ pub enum AstNode {
         routes: Vec<Box<AstNode>>,
         tls_config: Option<Box<AstNode>>,
         global_error_handler: Option<Box<AstNode>>,
+        config_block: Option<Box<AstNode>>,
     },
     GlobalErrorHandler {
         error_var: String,
@@ -348,6 +353,11 @@ pub enum AstNode {
     ErrorHandlerBlock {
         error_var: String,
         body: Box<AstNode>,
+    },
+    ConfigBlock {
+        config_type: String,
+        host: String,
+        port: String,
     },
 }
 
@@ -426,13 +436,16 @@ impl fmt::Display for AstNode {
                 writeln!(f, "  key_path: \"{}\"", key_path)?;
                 writeln!(f, "}}")
             },
-            AstNode::ServerConfig { routes, tls_config, global_error_handler } => {
+            AstNode::ServerConfig { routes, tls_config, global_error_handler, config_block } => {
                 writeln!(f, "Server Configuration: {{")?;
                 if let Some(tls) = tls_config {
                     writeln!(f, "  {}", tls)?;
                 }
                 if let Some(handler) = global_error_handler {
                     writeln!(f, "  {}", handler)?;
+                }
+                if let Some(config) = config_block {
+                    writeln!(f, "  {}", config)?;
                 }
                 for route in routes {
                     writeln!(f, "  {}", route)?;
@@ -447,6 +460,13 @@ impl fmt::Display for AstNode {
             AstNode::ErrorHandlerBlock { error_var, body } => {
                 writeln!(f, "Error Handler Block({}): {{", error_var)?;
                 writeln!(f, "   {}", body)?;
+                writeln!(f, "}}")
+            },
+            AstNode::ConfigBlock { config_type, host, port } => {
+                writeln!(f, "Config: {{")?;
+                writeln!(f, "   type: \"{}\"", config_type)?;
+                writeln!(f, "   host: \"{}\"", host)?;
+                writeln!(f, "   port: {}", port)?;
                 writeln!(f, "}}")
             },
         }

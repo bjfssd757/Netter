@@ -1,23 +1,16 @@
 use std::fmt;
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum Types {
-    String(String),
-    Number(i64),
-    Vec(Vec<Types>),
-    Bool(bool),
-    None,
-}
-
-#[derive(Debug, PartialEq, Clone)]
 pub enum TokenType {
     Route,              // route
     Val,                // val
     Var,                // var
     If,                 // if
     Else,               // else
+    // -------- //
     String(String),     // "..."
     Number(i64),        // 1234...
+    // -------- //
     Identifier(String), // Идентификаторы
     HttpMethod(String), // GET, POST ...
     LBrace,             // {
@@ -32,14 +25,22 @@ pub enum TokenType {
     NotEquals,          // !=
     Comment(String),    // Комментарии
     EOF,                // Конец файла
+    // -------- //
     Tls,                // tls
     Enabled,            // enabled
     CertPath,           // cert_path
     KeyPath,            // key_path
+    // -------- //
     TryOperator,        // ?
     UnwrapOperator,     // !!
     OnError,            // on_error
     GlobalErrorHandler, // global_error_handler
+    // -------- //
+    Config,             // config
+    TypeName,           // type
+    Host,               // host
+    Port,               // port
+    // -------- //
     Concatenation,      // +
     PlusEqual,          // +=
 }
@@ -83,6 +84,10 @@ impl fmt::Display for Token {
             TokenType::UnwrapOperator => write!(f, "!!"),
             TokenType::OnError => write!(f, "onError"),
             TokenType::GlobalErrorHandler => write!(f, "global_error_handler"),
+            TokenType::Config => write!(f, "config"),
+            TokenType::TypeName => write!(f, "type"),
+            TokenType::Host => write!(f, "host"),
+            TokenType::Port => write!(f, "port"),
             TokenType::Concatenation => write!(f, "+"),
             TokenType::PlusEqual => write!(f, "+="),
         }

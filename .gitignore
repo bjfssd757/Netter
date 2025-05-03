@@ -21,3 +21,4 @@ SERVER_STATE.json
 /netter_core/target
 /netter_logger/target
 /netter_service/target
+/logs_cli

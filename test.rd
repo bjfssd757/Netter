@@ -1,3 +1,9 @@
+config {
+    type = "http";
+    host = "127.0.0.1";
+    port = 9091;
+};
+
 global_error_handler(e) {
     log_error("Глобальная ошибка: " + e);
     val status = 500;

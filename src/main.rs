@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use std::{path::Path, process::ExitCode};
+use std::{path::{Path, PathBuf}, process::ExitCode};
 use netter_logger;
 use log::{
     info,
@@ -39,7 +39,7 @@ struct Cli {
     #[command(subcommand)]
     command: Commands,
 
-    #[arg(short, long, global = true, help = "Включить подробный вывод (verbose)")]
+    #[arg(short = 'v', long = "verbose", global = true, help = "Включить подробный вывод (verbose)")]
     verbose: bool,
 }
 
@@ -72,14 +72,22 @@ enum Commands {
 async fn main() -> ExitCode {
     let cli = Cli::parse();
 
-    if let Err(e) = std::fs::create_dir_all(CLI_LOG_DIR) {
-         eprintln!("CRITICAL: Failed to create CLI log directory '{}': {}", CLI_LOG_DIR, e);
-         return ExitCode::FAILURE;
-    }
-    let log_level = if cli.verbose { log::LevelFilter::Debug } else { log::LevelFilter::Info };
-    if let Err(e) = netter_logger::init(Some(CLI_LOG_DIR), log_level, log::LevelFilter::Trace) {
-        eprintln!("CRITICAL: Failed to initialize CLI logger: {}", e);
-        return ExitCode::FAILURE;
+    let v = cli.verbose.clone();
+    if v {
+        if let Err(e) = std::fs::create_dir_all(CLI_LOG_DIR) {
+            eprintln!("CRITICAL: Failed to create CLI log directory '{}': {}", CLI_LOG_DIR, e);
+            return ExitCode::FAILURE;
+        }
+        let log_level = log::LevelFilter::Debug;
+        if let Err(e) = netter_logger::init(Some(CLI_LOG_DIR), log_level, log::LevelFilter::Trace) {
+            eprintln!("CRITICAL: Failed to initialize CLI logger: {}", e);
+            return ExitCode::FAILURE;
+        }
+    } else {
+        if let Err(e) = netter_logger::init(None::<PathBuf>, log::LevelFilter::Info, log::LevelFilter::Error) {
+            eprintln!("CRITICAL: Failed to initialize CLI logger: {}", e);
+            return ExitCode::FAILURE;
+        }
     }
     info!("Netter CLI v{} started.", env!("CARGO_PKG_VERSION"));
     debug!("CLI Arguments: {:?}", cli);

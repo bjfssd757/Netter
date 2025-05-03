@@ -3,25 +3,19 @@ use std::{
     error::Error as StdError,
     fs,
     io,
-    net::SocketAddr,
     path::{Path, PathBuf},
-    str::FromStr,
     sync::{Arc, Mutex},
     time::Duration,
 };
-
 use lazy_static::lazy_static;
 use log::{debug, error, info, trace, warn, LevelFilter};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
-    net::TcpListener,
     sync::mpsc as tokio_mpsc,
     task::JoinHandle,
 };
-
 use netter_core::{
     servers::http_core::{self, Server as HttpCoreServer},
     Command,
@@ -31,13 +25,7 @@ use netter_core::{
     ServerInfo,
     ServerType,
 };
-use hyper::service::service_fn;
-use hyper_util::{
-    rt::{TokioExecutor, TokioIo},
-    server::conn::auto::Builder as HyperAutoBuilder,
-};
 use netter_logger;
-use tokio_rustls::TlsAcceptor;
 
 #[cfg(windows)]
 use std::ffi::OsString;
@@ -67,7 +55,7 @@ use tokio::signal::unix::{signal, SignalKind};
 
 #[allow(dead_code)]
 const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "YourOrg";
+const ORGANIZATION: &str = "Netter";
 const APPLICATION: &str = "NetterService";
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -343,22 +331,40 @@ async fn process_command(command: Command, client_id: Uuid) -> Result<Response, 
         } => {
             debug!("Core returned StartHttpServer.");
             let server_id = Uuid::new_v4().to_string();
-            let server_state = Arc::new(HttpCoreServer::from_interpreter(interpreter, tls_config));
-            let (addr_str, port) = {
-                // let guard = server_state
-                //     .interpreter
-                //     .as_ref()
-                //     .ok_or(CoreError::InternalError("Interpreter missing".into()))?
-                //     .lock()
-                //     .map_err(|_| CoreError::InternalError("Mutex poisoned".into()))?;
-                let host = String::from("127.0.0.1");
-                let port = 9090;
-                (host, port)
+
+            let default_host = "127.0.0.1";
+            let default_port: u16 = 9090;
+
+            let (addr_str, port) = if let Some(config) = &interpreter.configuration {
+                if config.config_type.eq_ignore_ascii_case("http") {
+                    let host = if config.host.is_empty() {
+                        warn!("Config block 'http' found but host is empty, using default '{}'", default_host);
+                        default_host
+                    } else {
+                        &config.host
+                    };
+
+                    let port = config.port.parse::<u16>().unwrap_or_else(|_| {
+                        warn!("Failed to parse port '{}' from config, using default {}", config.port, default_port);
+                        default_port
+                    });
+
+                    info!("Using host '{}' and port {} from 'config' block.", host, port);
+                    (host.to_string(), port)
+                } else {
+                    warn!("Config block found but type is not 'http' (is '{}'), using defaults.", config.config_type);
+                    (default_host.to_string(), default_port)
+                }
+            } else {
+                info!("No 'config' block found in configuration, using default host '{}' and port {}.", default_host, default_port);
+                (default_host.to_string(), default_port)
             };
+
+            let server_state = Arc::new(HttpCoreServer::from_interpreter(interpreter, tls_config));
 
             let socket_addr_str = format!("{}:{}", addr_str, port);
             info!(
-                "Starting HTTP server (ID: {}) on {}...",
+                "Attempting to start HTTP server (ID: {}) on {}...",
                 server_id, socket_addr_str
             );
 
@@ -367,7 +373,7 @@ async fn process_command(command: Command, client_id: Uuid) -> Result<Response, 
                 let state_c = server_state.clone();
                 let addr_c = socket_addr_str.clone();
                 async move {
-                    run_hyper_server(addr_c, state_c, id_c).await;
+                    http_core::run_hyper_server(addr_c, state_c, id_c).await;
                 }
             });
 
@@ -378,20 +384,21 @@ async fn process_command(command: Command, client_id: Uuid) -> Result<Response, 
                 pid: None,
                 status: "Starting".to_string(),
             };
-            {
-                RUNNING_SERVERS
+
+             {
+                let mut servers = RUNNING_SERVERS
                     .lock()
-                    .map_err(|_| CoreError::InternalError("Mutex poisoned".into()))?
-                    .insert(
-                        server_id.clone(),
-                        RunningServer {
-                            info: server_info.clone(),
-                            task_handle: Some(task_handle),
-                        },
-                    );
+                    .map_err(|p| CoreError::InternalError(format!("Mutex poisoned on server insert: {}", p)))?;
+                 servers.insert(
+                    server_id.clone(),
+                    RunningServer {
+                        info: server_info.clone(),
+                        task_handle: Some(task_handle),
+                    },
+                );
             }
             save_state();
-            info!("Server {} added.", server_id);
+            info!("Server {} added to running list and state saved.", server_id);
             Ok(Response::ServerStarted(server_info))
         }
     }
@@ -678,53 +685,94 @@ mod windows_service_impl {
     async fn handle_client_windows(mut pipe: NamedPipeServer) {
         let client_id = Uuid::new_v4();
         trace!("[Client {}] Start (WinPipe).", client_id);
-        let result: Result<Response, CoreError> = async {
-            let mut buffer = vec![0u8; 8192];
-            let bytes_read = pipe
-                .read(&mut buffer)
+
+        let command_result: Result<Command, CoreError> = async {
+            let mut size_buf = [0u8; 4];
+            pipe.read_exact(&mut size_buf)
                 .await
-                .map_err(|e| CoreError::IoError(format!("Pipe read: {}", e)))?;
-            if bytes_read == 0 {
-                return Err(CoreError::IoError("Client disconnected".into()));
+                .map_err(|e| CoreError::IoError(format!("Pipe read size: {}", e)))?;
+            let command_size = u32::from_be_bytes(size_buf) as usize;
+            trace!("[Client {}] Command size header: {}", client_id, command_size);
+
+            const MAX_CMD_SIZE: usize = 1 * 1024 * 1024;
+            if command_size > MAX_CMD_SIZE {
+                return Err(CoreError::InvalidInput(format!(
+                    "Command size {} exceeds limit {}",
+                    command_size, MAX_CMD_SIZE
+                )));
             }
-            trace!("[Client {}] Read {} bytes.", client_id, bytes_read);
-            let command: Command = bincode::deserialize(&buffer[..bytes_read])
-                .map_err(|e| CoreError::DeserializationError(format!("Parse: {}", e)))?;
-            process_command(command, client_id).await
-        }
-        .await;
-        match result {
-            Ok(r) => {
-                match bincode::serialize(&r) {
-                    Ok(b) => {
-                        trace!("[Client {}] Send resp ({}b).", client_id, b.len());
-                        if let Err(e) = pipe.write_all(&b).await {
-                            error!("Pipe write: {}", e);
-                        }
-                        else {
-                            let _ = pipe.flush().await;
-                            trace!("Resp sent.");
-                        }
-                    }
-                    Err(e) => {
-                        error!("Serialize err: {}", e);
-                        let er = Response::Error(CoreError::SerializationError(e.to_string()));
-                        if let Ok(eb) = bincode::serialize(&er) {
-                            let _ = pipe.write_all(&eb).await;
-                            let _ = pipe.flush().await;
+            if command_size == 0 {
+                 return Err(CoreError::InvalidInput("Received zero command size".to_string()));
+            }
+
+            let mut command_buffer = vec![0u8; command_size];
+            pipe.read_exact(&mut command_buffer)
+                .await
+                .map_err(|e| CoreError::IoError(format!("Pipe read body ({} bytes): {}", command_size, e)))?;
+
+            trace!("[Client {}] Read {} command bytes.", client_id, command_buffer.len());
+
+            bincode::deserialize(&command_buffer)
+                .map_err(|e| CoreError::DeserializationError(format!("Command parse: {}", e)))
+
+        }.await;
+
+        let response = match command_result {
+             Ok(command) => {
+                trace!("[Client {}] Received command: {:?}", client_id, command);
+                process_command(command, client_id).await
+             }
+             Err(e) => {
+                error!("[Client {}] Error reading/parsing command: {}", client_id, e);
+                Err(e)
+             }
+        };
+
+        let final_response = match response {
+            Ok(r) => r,
+            Err(e) => {
+                error!("[Client {}] Processing error: {}", client_id, e);
+                Response::Error(e)
+            }
+        };
+
+        match bincode::serialize(&final_response) {
+            Ok(response_bytes) => {
+                let response_size = response_bytes.len() as u32;
+                trace!(
+                    "[Client {}] Sending response ({} bytes): {:?}",
+                    client_id,
+                    response_size,
+                    final_response
+                );
+
+                if let Err(e) = pipe.write_all(&response_size.to_be_bytes()).await {
+                    error!("[Client {}] Pipe write response size error: {}", client_id, e);
+                } else {
+                    if let Err(e) = pipe.write_all(&response_bytes).await {
+                        error!("[Client {}] Pipe write response body error: {}", client_id, e);
+                    } else {
+                        if let Err(e) = pipe.flush().await {
+                             warn!("[Client {}] Pipe flush error: {}", client_id, e);
+                        } else {
+                            trace!("[Client {}] Response sent successfully.", client_id);
                         }
                     }
                 }
             }
             Err(e) => {
-                error!("Processing err: {}", e);
-                let er = Response::Error(e);
-                if let Ok(eb) = bincode::serialize(&er) {
-                    let _ = pipe.write_all(&eb).await;
-                    let _ = pipe.flush().await;
-                }
+                error!("[Client {}] Failed to serialize final response: {}", client_id, e);
+                let error_resp = Response::Error(CoreError::SerializationError(format!("Failed to serialize service response: {}", e)));
+                 if let Ok(error_bytes) = bincode::serialize(&error_resp) {
+                     let error_size = error_bytes.len() as u32;
+                     if pipe.write_all(&error_size.to_be_bytes()).await.is_ok() {
+                         let _ = pipe.write_all(&error_bytes).await;
+                         let _ = pipe.flush().await;
+                     }
+                 }
             }
         }
+
         trace!("[Client {}] Finish (WinPipe).", client_id);
     }
 
@@ -1004,135 +1052,4 @@ async fn main() -> Result<(), Box<dyn StdError>> {
 fn main() {
     eprintln!("Error: Unsupported OS.");
     std::process::exit(1);
-}
-
-async fn run_hyper_server(
-    socket_addr_str: String,
-    server_state: Arc<HttpCoreServer>,
-    server_id: String,
-) {
-    info!(
-        "[HTTP Server ID: {}] Attempting to bind on {}...",
-        server_id, socket_addr_str
-    );
-
-    let socket_addr = match SocketAddr::from_str(&socket_addr_str) {
-        Ok(addr) => addr,
-        Err(e) => {
-            error!(
-                "[HTTP Server ID: {}] Invalid address '{}': {}",
-                server_id, socket_addr_str, e
-            );
-            return;
-        }
-    };
-
-    let listener = match TcpListener::bind(socket_addr).await {
-        Ok(l) => {
-            info!(
-                "[HTTP Server ID: {}] Listening on {}",
-                server_id, socket_addr
-            );
-            l
-        }
-        Err(e) => {
-            error!(
-                "[HTTP Server ID: {}] Bind failed {}: {}",
-                server_id, socket_addr, e
-            );
-            return;
-        }
-    };
-
-    loop {
-        match listener.accept().await {
-            Ok((tcp_stream, remote_addr)) => {
-                trace!(
-                    "[HTTP Server ID: {}] Accepted from {}",
-                    server_id,
-                    remote_addr
-                );
-                let state_for_service = server_state.clone();
-                let state_for_tls_check = server_state.clone();
-                let id_clone = server_id.clone();
-
-                tokio::spawn(async move {
-                    let executor = TokioExecutor::new();
-
-                    let hyper_service = service_fn(move |req| {
-                        http_core::handle_http_request(req, state_for_service.clone())
-                    });
-
-                    if state_for_tls_check.is_tls_enabled() {
-                        if let Some(tls_conf) = state_for_tls_check.rustls_config.clone() {
-                            let acceptor = TlsAcceptor::from(tls_conf);
-                            match acceptor.accept(tcp_stream).await {
-                                Ok(tls_stream) => {
-                                    trace!(
-                                        "[HTTP Server ID: {}] TLS Handshake OK for {}",
-                                        id_clone,
-                                        remote_addr
-                                    );
-                                    let io = TokioIo::new(tls_stream);
-                                    if let Err(err) = HyperAutoBuilder::new(executor)
-                                        .serve_connection(io, hyper_service)
-                                        .await
-                                    {
-                                        let is_incomplete = err
-                                            .downcast_ref::<hyper::Error>()
-                                            .map_or(false, |he| he.is_incomplete_message());
-                                        if !is_incomplete {
-                                            error!(
-                                                "[HTTP Server ID: {}] TLS Conn error {}: {}",
-                                                id_clone, remote_addr, err
-                                            );
-                                        }
-                                    }
-                                }
-                                Err(e) => {
-                                    error!(
-                                        "[HTTP Server ID: {}] TLS Handshake error {}: {}",
-                                        id_clone, remote_addr, e
-                                    );
-                                }
-                            }
-                        } else {
-                            error!(
-                                "[HTTP Server ID: {}] TLS enabled but config missing!",
-                                id_clone
-                            );
-                        }
-                    } else {
-                        let io = TokioIo::new(tcp_stream);
-                        if let Err(err) = HyperAutoBuilder::new(executor)
-                            .serve_connection(io, hyper_service)
-                            .await
-                        {
-                            let is_incomplete = err
-                                .downcast_ref::<hyper::Error>()
-                                .map_or(false, |he| he.is_incomplete_message());
-                            if !is_incomplete {
-                                error!(
-                                    "[HTTP Server ID: {}] HTTP Conn error {}: {}",
-                                    id_clone, remote_addr, err
-                                );
-                            }
-                        }
-                    }
-                    trace!(
-                        "[HTTP Server ID: {}] Conn finished for {}",
-                        id_clone,
-                        remote_addr
-                    );
-                });
-            }
-            Err(e) => {
-                error!(
-                    "[HTTP Server ID: {}] Accept error: {}. Pausing...",
-                    server_id, e
-                );
-                tokio::time::sleep(Duration::from_millis(100)).await;
-            }
-        }
-    }
 }

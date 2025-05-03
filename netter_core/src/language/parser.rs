@@ -30,6 +30,7 @@ impl Parser {
         let mut statements = Vec::new();
         let mut tls_config = None;
         let mut global_error_handler = None;
+        let mut config = None;
         
         while !self.is_at_end() {
             if self.check(&TokenType::Tls) {
@@ -38,29 +39,37 @@ impl Parser {
                 }
                 tls_config = Some(Box::new(self.tls_config()?));
             } else if self.check(&TokenType::GlobalErrorHandler) {
-
                 if global_error_handler.is_some() {
                     return Err("Дублирование глобального обработчика ошибок".to_string());
                 }
                 global_error_handler = Some(Box::new(self.global_error_handler()?));
             } else if self.check(&TokenType::Route) {
                 statements.push(Box::new(self.route()?));
+            } else if self.check(&TokenType::Config) {
+                if config.is_some() {
+                    return Err("Дублирование блока 'config'".to_string());
+                }
+                config = Some(Box::new(self.config_block()?));
             } else {
-                return Err(format!("Ожидается 'route' или 'tls', получено: {:?}", self.peek().token_type));
+                return Err(format!("Ожидается 'route', 'tls' или 'config', получено: {:?}", self.peek().token_type));
             }
         }
 
         let has_tls = tls_config.is_some();
         let has_global_handler = global_error_handler.is_some();
+        let has_config = config.is_some();
         
-        if has_tls || has_global_handler {
+        if has_tls || has_global_handler || has_config {
             Ok(AstNode::ServerConfig {
                 routes: statements,
                 tls_config,
                 global_error_handler,
+                config_block: config,
             })
-        } else {
+        } else if !statements.is_empty() {
             Ok(AstNode::Program(statements))
+        } else {
+            Ok(AstNode::Program(vec![]))
         }
     }
 
@@ -141,6 +150,68 @@ impl Parser {
             enabled,
             cert_path,
             key_path,
+        })
+    }
+
+    fn config_block(&mut self) -> Result<AstNode, String> {
+        self.consume(&TokenType::Config, "Ожидается ключевое слово 'config'")?;
+        self.consume(&TokenType::LBrace, "Ожидается '{' после 'config'")?;
+
+        let mut type_name = String::new();
+        let mut host = String::new();
+        let mut port = String::new();
+
+        while !self.check(&TokenType::RBrace) && !self.is_at_end() {
+            if self.match_token(&TokenType::TypeName) {
+                self.consume(&TokenType::Equals, "Ожидается '=' после 'type'")?;
+                let value_token = self.advance();
+                 match &value_token.token_type {
+                     TokenType::String(v) | TokenType::Identifier(v) => {
+                        type_name = v.clone();
+                    }
+                    _ => return Err(format!("Ожидается строка или идентификатор для type, получено {:?}", value_token.token_type)),
+                };
+                self.consume(&TokenType::Semicolon, "Ожидается ';' после значения type")?;
+            } else if self.match_token(&TokenType::Host) {
+                self.consume(&TokenType::Equals, "Ожидается '=' после 'host'")?;
+                let value_token = self.advance();
+                 match &value_token.token_type {
+                     TokenType::String(v) | TokenType::Identifier(v) => {
+                        host = v.clone();
+                    }
+                    _ => return Err(format!("Ожидается строка или идентификатор для host, получено {:?}", value_token.token_type)),
+                };
+                self.consume(&TokenType::Semicolon, "Ожидается ';' после значения host")?;
+            } else if self.match_token(&TokenType::Port) {
+                self.consume(&TokenType::Equals, "Ожидается '=' после 'port'")?;
+                let value_token = self.advance();
+                 match &value_token.token_type {
+                    TokenType::String(v) => port = v.clone(),
+                    TokenType::Number(n) => port = n.to_string(),
+                    TokenType::Identifier(v) => port = v.clone(),
+                    _ => return Err(format!("Ожидается строка, число или идентификатор для port, получено {:?}", value_token.token_type)),
+                };
+                self.consume(&TokenType::Semicolon, "Ожидается ';' после значения port")?;
+            } else {
+                return Err(format!("Неизвестный ключ в блоке 'config': {:?} на строке {}", self.peek().token_type, self.peek().line));
+            }
+        }
+
+        self.consume(&TokenType::RBrace, "Ожидается '}' после блока 'config'")?;
+        self.consume(&TokenType::Semicolon, "Ожидается ';' после блока 'config'")?;
+
+        if type_name == "http" && (host.is_empty() || port.is_empty()) {
+             return Err("Для type=\"http\" необходимо указать host и port в блоке 'config'".to_string());
+        }
+        if !port.is_empty() && port.parse::<u16>().is_err() {
+            return Err(format!("Значение port '{}' не является допустимым числом (0-65535)", port));
+        }
+
+
+        Ok(AstNode::ConfigBlock {
+            config_type: type_name,
+            host,
+            port,
         })
     }
 

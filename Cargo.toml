@@ -16,7 +16,7 @@ resolver = "2"
 
 [dependencies]
 netter_logger = "0.1.1"
-netter_core = "0.1.1"
+netter_core = { path="./netter_core" }
 clap = { version="4.5.35", features=["derive"] }
 derive_more = { version="2.0.1", features=[ "full" ] }
 log = "0.4.27"

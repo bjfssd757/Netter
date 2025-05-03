@@ -12,11 +12,19 @@ use std::{collections::HashMap, convert::Infallible, fs::File, io::BufReader, st
 use derive_more::Debug;
 use rustls::ServerConfig;
 use rustls_pemfile::{certs, pkcs8_private_keys};
-
+use hyper::service::service_fn;
+use hyper_util::{
+    rt::{TokioExecutor, TokioIo},
+    server::conn::auto::Builder as HyperAutoBuilder,
+};
+use tokio_rustls::TlsAcceptor;
+use tokio::net::TcpListener;
 use crate::{
     language::{self, interpreter::Interpreter},
     CoreError,
 };
+use std::net::SocketAddr;
+use std::time::Duration;
 
 #[derive(Debug, Clone)] 
 pub struct Server {
@@ -285,4 +293,135 @@ fn full<T: Into<Bytes>>(chunk: T) -> BoxBody<Bytes, hyper::Error> {
     Full::new(chunk.into())
         .map_err(|never| match never {}) 
         .boxed() 
+}
+
+pub async fn run_hyper_server(
+    socket_addr_str: String,
+    server_state: Arc<Server>,
+    server_id: String,
+) {
+    info!(
+        "[HTTP Server ID: {}] Attempting to bind on {}...",
+        server_id, socket_addr_str
+    );
+
+    let socket_addr = match SocketAddr::from_str(&socket_addr_str) {
+        Ok(addr) => addr,
+        Err(e) => {
+            error!(
+                "[HTTP Server ID: {}] Invalid address '{}': {}",
+                server_id, socket_addr_str, e
+            );
+            return;
+        }
+    };
+
+    let listener = match TcpListener::bind(socket_addr).await {
+        Ok(l) => {
+            info!(
+                "[HTTP Server ID: {}] Listening on {}",
+                server_id, socket_addr
+            );
+            l
+        }
+        Err(e) => {
+            error!(
+                "[HTTP Server ID: {}] Bind failed {}: {}",
+                server_id, socket_addr, e
+            );
+            return;
+        }
+    };
+
+    loop {
+        match listener.accept().await {
+            Ok((tcp_stream, remote_addr)) => {
+                trace!(
+                    "[HTTP Server ID: {}] Accepted from {}",
+                    server_id,
+                    remote_addr
+                );
+                let state_for_service = server_state.clone();
+                let state_for_tls_check = server_state.clone();
+                let id_clone = server_id.clone();
+
+                tokio::spawn(async move {
+                    let executor = TokioExecutor::new();
+
+                    let hyper_service = service_fn(move |req| {
+                        handle_http_request(req, state_for_service.clone())
+                    });
+
+                    if state_for_tls_check.is_tls_enabled() {
+                        if let Some(tls_conf) = state_for_tls_check.rustls_config.clone() {
+                            let acceptor = TlsAcceptor::from(tls_conf);
+                            match acceptor.accept(tcp_stream).await {
+                                Ok(tls_stream) => {
+                                    trace!(
+                                        "[HTTP Server ID: {}] TLS Handshake OK for {}",
+                                        id_clone,
+                                        remote_addr
+                                    );
+                                    let io = TokioIo::new(tls_stream);
+                                    if let Err(err) = HyperAutoBuilder::new(executor)
+                                        .serve_connection(io, hyper_service)
+                                        .await
+                                    {
+                                        let is_incomplete = err
+                                            .downcast_ref::<hyper::Error>()
+                                            .map_or(false, |he| he.is_incomplete_message());
+                                        if !is_incomplete {
+                                            error!(
+                                                "[HTTP Server ID: {}] TLS Conn error {}: {}",
+                                                id_clone, remote_addr, err
+                                            );
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    error!(
+                                        "[HTTP Server ID: {}] TLS Handshake error {}: {}",
+                                        id_clone, remote_addr, e
+                                    );
+                                }
+                            }
+                        } else {
+                            error!(
+                                "[HTTP Server ID: {}] TLS enabled but config missing!",
+                                id_clone
+                            );
+                        }
+                    } else {
+                        let io = TokioIo::new(tcp_stream);
+                        if let Err(err) = HyperAutoBuilder::new(executor)
+                            .serve_connection(io, hyper_service)
+                            .await
+                        {
+                            let is_incomplete = err
+                                .downcast_ref::<hyper::Error>()
+                                .map_or(false, |he| he.is_incomplete_message());
+                            if !is_incomplete {
+                                error!(
+                                    "[HTTP Server ID: {}] HTTP Conn error {}: {}",
+                                    id_clone, remote_addr, err
+                                );
+                            }
+                        }
+                    }
+                    trace!(
+                        "[HTTP Server ID: {}] Conn finished for {}",
+                        id_clone,
+                        remote_addr
+                    );
+                });
+            }
+            Err(e) => {
+                error!(
+                    "[HTTP Server ID: {}] Accept error: {}. Pausing...",
+                    server_id, e
+                );
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+        }
+    }
 }

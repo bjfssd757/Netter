@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::fmt; 
 use log::{error, trace, warn, debug};
 use crate::servers::http_core::TlsConfig;
-use crate::language::operators::Types;
 
 
 #[allow(dead_code)] 
@@ -34,7 +33,7 @@ pub enum RouteAction {
         property: String, 
     },
     GlobalErrorHandler {
-        error_var: String, 
+        error_var: String,
         body: Vec<Box<RouteAction>>, 
     },
     ErrorHandlerBlock {
@@ -186,6 +185,12 @@ pub struct ErrorHandler {
     pub actions: Vec<RouteAction>, 
 }
 
+#[derive(Debug, Clone)]
+pub struct Configuration {
+    pub config_type: String,
+    pub host: String,
+    pub port: String,
+}
 
 #[derive(Debug, Clone)] 
 pub struct RouteHandler {
@@ -499,6 +504,7 @@ pub struct Interpreter {
     pub routes: HashMap<String, (String, RouteHandler)>,
     pub tls_config: Option<TlsConfig>,
     pub global_error_handler: Option<ErrorHandler>,
+    pub configuration: Option<Configuration>
 }
 
 impl Interpreter {
@@ -506,7 +512,8 @@ impl Interpreter {
         Interpreter {
             routes: HashMap::new(), 
             tls_config: None, 
-            global_error_handler: None, 
+            global_error_handler: None,
+            configuration: None,
         }
     }
     
@@ -525,7 +532,7 @@ impl Interpreter {
                 }
                 Ok(()) 
             },
-            crate::language::lexer::AstNode::ServerConfig { routes, tls_config, global_error_handler } => {                
+            crate::language::lexer::AstNode::ServerConfig { routes, tls_config, global_error_handler, config_block } => {                
                 if let Some(tls) = tls_config {
                     match &**tls { 
                         crate::language::lexer::AstNode::TlsConfig { enabled, cert_path, key_path } => {
@@ -542,6 +549,18 @@ impl Interpreter {
                             }
                         },
                         _ => return Err("Ожидается TLS конфигурация".to_string()),
+                    }
+                }
+                if let Some(config) = config_block {
+                    match &**config {
+                        crate::language::lexer::AstNode::ConfigBlock { config_type, host, port } => {
+                            self.configuration = Some(Configuration {
+                                config_type: config_type.clone().to_string(),
+                                host: host.clone().to_string(),
+                                port: port.clone().to_string(),
+                            })
+                        },
+                        _ => return Err("Ожидается блок конфигурации".to_string()),
                     }
                 }
                 if let Some(handler) = global_error_handler {
@@ -792,7 +811,8 @@ impl Clone for Interpreter {
         Interpreter {
             routes: new_routes, 
             tls_config: self.tls_config.clone(), 
-            global_error_handler: self.global_error_handler.clone(), 
+            global_error_handler: self.global_error_handler.clone(),
+            configuration: self.configuration.clone(),
         }
     }
 }
