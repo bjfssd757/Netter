@@ -1,35 +1,27 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-echo "======================================================="
-echo "Install Rust and Cargo"
-echo "======================================================="
-
-if ! command -v curl &> /dev/null; then
-    echo "Error: curl not installed. Please install curl."
-    exit 1
-fi
-
-echo "Downloading and installing rustup..."
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-
-source "$HOME/.cargo/env"
+error(){ 
+	printf '%s' "$*"
+	exit 1 
+}
 
 if command -v rustc &> /dev/null && command -v cargo &> /dev/null; then
     echo "======================================================="
-    echo "Install Rust and Cargo successfully!"
+    echo "Rust and Cargo are already installed"
     echo "======================================================="
-    echo
-    echo "Rust version:"
-    rustc --version
-    echo
-    echo "Cargo version:"
-    cargo --version
-    echo
-    echo "Path to Rust add to PATH env to current session"
-    echo "Add setting in ~/.profile for Rust."
+    printf "The rust version: $(rustc -V)\n" 
+    printf "The cargo version: $(cargo -V)\n"
+    echo "======================================================="
+    exit 0
 else
     echo "======================================================="
-    echo "Error while installing Rust и Cargo"
+    echo "Installation of Rust and Cargo"
     echo "======================================================="
-    exit 1
+    command -v curl &> /dev/null || error "Error: curl is not installed. Please install curl."
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+    echo "Sourcing the env file under $HOME./cargo/ directory"
+    user_shell=$(awk -F: -v user="$USER" '$1 == user {print $NF}' /etc/passwd)
+    [[ user_shell == "nushell" ]] && source "$HOME/.cargo/env.nu" && exit 0
+    [[ user_shell == "fish" ]] && source "$HOME/.cargo/env.fish && exit 0
+    source "$HOME/.cargo/env" && exit 0
 fi
