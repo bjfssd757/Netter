@@ -365,108 +365,152 @@ async fn install_service() -> Result<ExitCode, Box<dyn std::error::Error>> {
     }
     #[cfg(unix)]
     {
-        println!("(Unix) This command requires root privileges (sudo).");
-        println!("Attempting basic installation (copy executable and create systemd unit)...");
-
-        let current_cli_exe = std::env::current_exe()?;
-        let service_exe_source = current_cli_exe
-            .parent()
-            .ok_or("Cannot find parent directory of CLI")?
-            .join("netter_service");
-
-        if !service_exe_source.exists() {
-            return Err(format!(
-                "Daemon executable 'netter_service' not found in the directory: {}",
-                service_exe_source
-                    .parent()
-                    .unwrap_or(Path::new("."))
-                    .display()
-            )
-            .into());
-        }
-        let service_source_str = service_exe_source
-            .to_str()
-            .ok_or("Invalid source path encoding")?;
-
-        let service_dest_str = "/usr/local/bin/netter_daemon";
-        run_os_command(
-            "sudo",
-            &["cp", "-v", service_source_str, service_dest_str],
-            "copy daemon executable",
-        )?;
-        run_os_command("sudo", &["chmod", "+x", service_dest_str], "make executable")?;
-
-        if !is_systemd_running() {
-            warn!("Systemd not detected on this system!");
-            println!(
-                "\nDaemon executable copied to {}.",
-                service_dest_str.clone()
-            );
-            println!("Automatic service managment is not available.");
-            println!("You need to manage the 'netter_daemon' process manually using your system's init system (e.g., SysVinit, OpenRC) or run it in the background (e.g., 'nohup {} &').", service_dest_str);
+        let info = os_info::get();
+        let type_os = info.os_type().to_string().to_lowercase();
+    
+        match type_os.as_str() {
+            "devuan" | "slackware" => {
+                const SERVICE_DEST_STR: &str = "/usr/local/bin/netterd";
+                const UNIT_FILE_PATH: &str = "/etc/init.d/netterd";
+                distributions_pathes(SERVICE_DEST_STR, UNIT_FILE_PATH).await?;
+            }
+            "alpine" | "gentoo" | "artix with openrc" => {
+                const SERVICE_DEST_STR: &str = "/usr/local/bin/netterd";
+                const UNIT_FILE_PATH: &str = "/etc/init.d/netterd";
+                distributions_pathes(SERVICE_DEST_STR, UNIT_FILE_PATH).await?;
+            }
+            "void" | "artix with runit" => {
+                const SERVICE_DEST_STR: &str = "/usr/local/bin/netterd";
+                const UNIT_FILE_PATH: &str = "/etc/sv/netterd/run";
+                distributions_pathes(SERVICE_DEST_STR, UNIT_FILE_PATH).await?;
+            }
+            "artix with s6" => {
+                const SERVICE_DEST_STR: &str = "/usr/local/bin/netterd";
+                const UNIT_FILE_PATH: &str = "/etc/s6/sv/netterd/run";
+                distributions_pathes(SERVICE_DEST_STR, UNIT_FILE_PATH).await?;
+            }
+            "tinycore" | "minimal alpine" => {
+                const SERVICE_DEST_STR: &str = "/usr/local/bin/netterd";
+                const UNIT_FILE_PATH: &str = "/etc/init.d/netterd";
+                distributions_pathes(SERVICE_DEST_STR, UNIT_FILE_PATH).await?;
+            }
+            "nixos" => {
+                println!("For NixOS, services must be defined in the system configuration.");
+            }
+            _ => {
+                const SERVICE_DEST_STR: &str = "/usr/local/bin/netterd";
+                const UNIT_FILE_PATH: &str = "/etc/systemd/system/netterd.service";
+                let _ = distributions_pathes(SERVICE_DEST_STR, UNIT_FILE_PATH).await;
+            }
         }
 
-        let unit_content = format!(
-            r#"[Unit]
-Description=Netter Service Daemon
-After=network.target
-
-[Service]
-Type=simple
-ExecStart={}
-WorkingDirectory={}
-Restart=on-failure
-User=nobody
-Group=nogroup
-StandardOutput=journal
-StandardError=journal
-
-[Install]
-WantedBy=multi-user.target
-"#,
-            service_dest_str,
-            Path::new(service_dest_str)
-                .parent()
-                .unwrap()
-                .to_str()
-                .unwrap()
-        );
-        let unit_file_path = "/etc/systemd/system/netterd.service";
-        println!("Creating systemd unit file at {}...", unit_file_path);
-        let echo_cmd = std::process::Command::new("echo")
-            .arg(unit_content)
-            .stdout(std::process::Stdio::piped())
-            .spawn()?;
-        let tee_cmd = std::process::Command::new("sudo")
-            .arg("tee")
-            .arg(unit_file_path)
-            .stdin(echo_cmd.stdout.ok_or("Failed to pipe echo output")?)
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::piped())
-            .status()?;
-
-        if !tee_cmd.success() {
-            return Err(format!("Failed to write systemd unit file '{}'", unit_file_path).into());
-        }
-        println!("Systemd unit file created.");
-
-        run_os_command("sudo", &["systemctl", "daemon-reload"], "reload systemd")?;
-        run_os_command("sudo", &["systemctl", "enable", "netterd"], "enable daemon")?;
-
-        println!("\nDaemon 'netterd' installed and enabled successfully.");
-        println!("Use 'netter service-start' to start the daemon.");
-        Ok(ExitCode::SUCCESS)
     }
     #[cfg(not(any(windows, unix)))]
     {
         Err("Unsupported OS for service installation.".into())
     }
+    Ok(ExitCode::SUCCESS)
+}
+
+async fn distributions_pathes(service_dest_str: &str, unit_file_path: &str) -> Result<ExitCode, Box<dyn std::error::Error>> {
+    println!("(Unix) This command requires root privileges (sudo).");
+    println!("Attempting basic installation (copy executable and create systemd unit)...");
+
+    let current_cli_exe = std::env::current_exe()?;
+    let service_exe_source = current_cli_exe
+        .parent()
+        .ok_or("Cannot find parent directory of CLI")?
+        .join("netter_service");
+
+    if !service_exe_source.exists() {
+        return Err(format!(
+            "Daemon executable 'netter_service' not found in the directory: {}",
+            service_exe_source
+                .parent()
+                .unwrap_or(Path::new("."))
+                .display()
+        )
+        .into());
+    }
+    let service_source_str = service_exe_source
+        .to_str()
+        .ok_or("Invalid source path encoding")?;
+
+    run_os_command(
+        "sudo",
+        &["cp", "-v", service_source_str, service_dest_str],
+        "copy daemon executable",
+    )?;
+    run_os_command("sudo", &["chmod", "+x", service_dest_str], "make executable")?;
+
+    if !is_systemd_running() {
+        warn!("Systemd not detected on this system!");
+        println!(
+            "\nDaemon executable copied to {}.",
+            service_dest_str.clone()
+        );
+        println!("Automatic service managment is not available.");
+        println!("You need to manage the 'netterd' process manually using your system's init system (e.g., SysVinit, OpenRC) or run it in the background (e.g., 'nohup {} &').", service_dest_str);
+    }
+
+    let unit_content = format!(
+                    r#"[Unit]
+        Description=Netter Service Daemon
+        After=network.target
+
+        [Service]
+        Type=simple
+        ExecStart={}
+        WorkingDirectory={}
+        Restart=on-failure
+        User=nobody
+        Group=nogroup
+        StandardOutput=journal
+        StandardError=journal
+
+        [Install]
+        WantedBy=multi-user.target
+        "#,
+        service_dest_str,
+        Path::new(service_dest_str)
+            .parent()
+            .unwrap()
+            .to_str()
+            .unwrap()
+    );
+
+
+    println!("Creating systemd unit file at {}...", unit_file_path);
+    let echo_cmd = std::process::Command::new("echo")
+        .arg(unit_content)
+        .stdout(std::process::Stdio::piped())
+        .spawn()?;
+    let tee_cmd = std::process::Command::new("sudo")
+        .arg("tee")
+        .arg(unit_file_path)
+        .stdin(echo_cmd.stdout.ok_or("Failed to pipe echo output")?)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .status()?;
+
+    if !tee_cmd.success() {
+        return Err(format!("Failed to write systemd unit file '{}'", unit_file_path).into());
+    }
+    println!("Systemd unit file created.");
+
+    run_os_command("sudo", &["systemctl", "daemon-reload"], "reload systemd")?;
+    run_os_command("sudo", &["systemctl", "enable", "netterd"], "enable daemon")?;
+
+    println!("\nDaemon 'netterd' installed and enabled successfully.");
+    println!("Use 'netter service-start' to start the daemon.");
+
+    Ok(ExitCode::SUCCESS)
 }
 
 async fn uninstall_service() -> Result<ExitCode, Box<dyn std::error::Error>> {
     println!("Attempting to uninstall Netter service/daemon...");
    #[cfg(windows)]
-   {
+   {  
        println!("(Windows) Stopping and deleting service 'NetterService'...");
        let _ = std::process::Command::new("sc").args(["stop", "NetterService"]).output()?;
        let output = std::process::Command::new("sc").args(["delete", "NetterService"]).output()?;
@@ -487,59 +531,129 @@ async fn uninstall_service() -> Result<ExitCode, Box<dyn std::error::Error>> {
    }
    #[cfg(unix)]
    {
-        println!("(Unix) This command requires root privileges (sudo).");
+        let info = os_info::get();
+        let type_os = info.os_type().to_string().to_lowercase();
 
-        if is_systemd_running() {
-            println!("Systemd detected. Disabling and stopping 'netterd' service...");
-            let _ = run_os_command("sudo", &["systemctl", "disable", "netterd"], "disable daemon");
-            let _ = run_os_command("sudo", &["systemctl", "stop", "netterd"], "stop daemon");
-        } else {
-            warn!("Systemd not detected. Skipping systemctl disable/stop.");
-            println!("If the daemon is running, you need to stop the 'netter_daemon' process manually (e.g., using 'pkill netter_daemon').");
+        match type_os.as_str() {
+            "devuan" | "slackware" => {
+                const SERVICE_DEST_STR: &str = "/usr/local/bin/netterd";
+                const UNIT_FILE_PATH: &str = "/etc/init.d/netterd";
+                uninstall_netterd_service(SERVICE_DEST_STR, UNIT_FILE_PATH).await?;
+            }
+            "alpine" | "gentoo" | "artix with openrc" => {
+                const SERVICE_DEST_STR: &str = "/usr/local/bin/netterd";
+                const UNIT_FILE_PATH: &str = "/etc/init.d/netterd";
+                uninstall_netterd_service(SERVICE_DEST_STR, UNIT_FILE_PATH).await?;
+            }
+            "void" | "artix with runit" => {
+                const SERVICE_DEST_STR: &str = "/usr/local/bin/netterd";
+                const UNIT_FILE_PATH: &str = "/etc/sv/netterd/run";
+                uninstall_netterd_service(SERVICE_DEST_STR, UNIT_FILE_PATH).await?;
+            }
+            "artix with s6" => {
+                const SERVICE_DEST_STR: &str = "/usr/local/bin/netterd";
+                const UNIT_FILE_PATH: &str = "/etc/s6/sv/netterd/run";
+                uninstall_netterd_service(SERVICE_DEST_STR, UNIT_FILE_PATH).await?;
+            }
+            "tinycore" | "minimal alpine" => {
+                const SERVICE_DEST_STR: &str = "/usr/local/bin/netterd";
+                const UNIT_FILE_PATH: &str = "/etc/init.d/netterd";
+                uninstall_netterd_service(SERVICE_DEST_STR, UNIT_FILE_PATH).await?;
+            }
+            "nixos" => {
+                println!("For NixOS, services must be defined in the system configuration.");
+            }
+            _ => {
+                const SERVICE_DEST_STR: &str = "/usr/local/bin/netterd";
+                const UNIT_FILE_PATH: &str = "/etc/systemd/system/netterd.service";
+                let _ = uninstall_netterd_service(SERVICE_DEST_STR, UNIT_FILE_PATH).await;
+            }
         }
-
-        let unit_file_dest = Path::new("/etc/systemd/system/netterd.service");
-        if unit_file_dest.exists() {
-            run_os_command(
-                "sudo",
-                &["rm", "-v", unit_file_dest.to_str().unwrap()],
-                "remove systemd unit file",
-            )?;
-        } else {
-            println!("Systemd unit file not found (already removed or not installed via systemd?).");
-        }
-
-        let daemon_dest = Path::new("/usr/local/bin/netter_daemon");
-        if daemon_dest.exists() {
-            run_os_command(
-                "sudo",
-                &["rm", "-v", daemon_dest.to_str().unwrap()],
-                "remove daemon executable",
-            )?;
-        } else {
-            println!("Daemon executable not found (already removed?).");
-        }
-
-        if is_systemd_running() {
-            run_os_command("sudo", &["systemctl", "daemon-reload"], "reload systemd")?;
-            run_os_command(
-                "sudo",
-                &["systemctl", "reset-failed"],
-                "reset failed units",
-            )?;
-        }
-
-        println!("\nDaemon 'netterd' uninstalled successfully.");
-        println!(
-            "You might want to manually remove state files ({}) and log files.",
-            CLI_LOG_DIR
-        );
-        Ok(ExitCode::SUCCESS)
    }
    #[cfg(not(any(windows, unix)))]
    {
        Err("Service uninstallation is not supported on this OS.".into())
    }
+   Ok(ExitCode::SUCCESS)
+}
+
+async fn uninstall_netterd_service(service_dest_str: &str, unit_file_path: &str) -> Result<ExitCode, Box<dyn std::error::Error>> {
+    println!("(Unix) This command requires root privileges (sudo).");
+
+    if is_systemd_running() {
+        println!("Systemd detected. Disabling and stopping 'netterd' service...");
+        let _ = run_os_command("sudo", &["systemctl", "disable", service_dest_str], "disable daemon");
+        let _ = run_os_command("sudo", &["systemctl", "stop", service_dest_str], "stop daemon");
+    } else if is_sysvinit_running() {
+        println!("Sysvinit detected. Disabling and stopping 'netterd' service...");
+        let init_path = format!("/etc/init.d/{}", service_dest_str);
+        let _ = run_os_command("sudo", &[&init_path, "stop"], "stop daemon");
+        let _ = run_os_command("sudo", &["update-rc.d", "-f", service_dest_str, "remove"], "disable daemon");
+    } else if is_openrc_running() {
+        println!("Openrc detected. Disabling and stopping 'netterd' service...");
+        let _ = run_os_command("sudo", &["rc-service", service_dest_str, "stop"], "stop daemon");
+        let _ = run_os_command("sudo", &["rc-update", "del", service_dest_str], "disable daemon");
+    } else if is_runit_running() {
+        println!("Runit detected. Disabling and stopping 'netterd' service...");
+        let init_path = format!("/etc/sv/{}", service_dest_str);
+        let _ = run_os_command("sudo", &["sv", "down", service_dest_str], "stop daemon");
+        let _ = run_os_command("sudo", &["rm", "-rf", &init_path], "disable daemon");
+    } else if is_s6_running() {
+        println!("R6 detected. Disabling and stopping 'netterd' service...");
+        let init_path = format!("/etc/s6/sv/{}", service_dest_str);
+        let _ = run_os_command("sudo", &["s6-svc", "-d", &init_path], "stop daemon");
+        let _ = run_os_command("sudo", &["rm", "-rf", &init_path], "disable daemon");
+    } else if is_tinycore_running() {
+        println!("Tinycore detected. Disabling and stopping 'netterd' service...");
+        let init_path = format!("/etc/init.d/{}", service_dest_str);
+        let _ = run_os_command("sudo", &[&init_path, "stop"], "stop daemon");
+        let _ = run_os_command("sudo", &["update-rc.d", "-f", service_dest_str, "remove"], "disable daemon");
+    } else if is_nixos_running() {
+        println!("Please remove 'netterd' from your NixOS configuration and run 'sudo nixos-rebuild switch' to stop and disable the service.");            
+    } else {
+        warn!("System initialization not detected. Skipping disable/stop.");
+        println!("If the daemon is running, you need to stop the 'netterd' process manually (e.g., using 'pkill netterd').");
+    }
+
+    /* first path */
+    let unit_file_dest = Path::new(unit_file_path);
+    if unit_file_dest.exists() {
+        run_os_command(
+            "sudo",
+            &["rm", "-v", unit_file_dest.to_str().unwrap()],
+            "remove systemd unit file",
+        )?;
+    } else {
+        println!("Systemd unit file not found (already removed or not installed via systemd?).");
+    }
+
+    /* second path */
+    let daemon_dest = Path::new(service_dest_str);
+    if daemon_dest.exists() {
+        run_os_command(
+            "sudo",
+            &["rm", "-v", daemon_dest.to_str().unwrap()],
+            "remove daemon executable",
+        )?;
+    } else {
+        println!("Daemon executable not found (already removed?).");
+    }
+
+    if is_systemd_running() {
+        run_os_command("sudo", &["systemctl", "daemon-reload"], "reload systemd")?;
+        run_os_command(
+            "sudo",
+            &["systemctl", "reset-failed"],
+            "reset failed units",
+        )?;
+    }
+
+    println!("\nDaemon 'netterd' uninstalled successfully.");
+    println!(
+        "You might want to manually remove state files ({}) and log files.",
+        CLI_LOG_DIR
+    );
+    Ok(ExitCode::SUCCESS)
 }
 
 async fn start_service() -> Result<ExitCode, Box<dyn std::error::Error>> {
@@ -548,8 +662,28 @@ async fn start_service() -> Result<ExitCode, Box<dyn std::error::Error>> {
        run_os_command("sc", &["start", "NetterService"], "start service")
    }
    #[cfg(unix)] {
+        println!("Attempting to start Netter service/daemon...");
         println!("(Unix) This command may require root privileges (sudo).");
-        run_os_command("sudo", &["systemctl", "start", "netterd"], "start daemon")
+
+        if is_systemd_running() {
+            run_os_command("sudo", &["systemctl", "start", "netterd"], "start daemon")
+        } else if is_sysvinit_running() {
+            run_os_command("sudo", &["/etc/init.d/netterd", "start"], "start daemon")
+        } else if is_openrc_running() {
+            run_os_command("sudo", &["rc-service", "netterd", "start"], "start daemon")
+        } else if is_runit_running() {
+            run_os_command("sudo", &["sv", "up", "netterd"], "start daemon")
+        } else if is_s6_running() {
+            run_os_command("sudo", &["s6-svc", "-u", "/run/service/netterd"], "start daemon")
+        } else if is_tinycore_running() {
+            run_os_command("sudo", &["/etc/init.d/netterd", "start"], "start daemon")
+        } else if is_nixos_running() {
+            println!("On NixOS, please enable and start the service via configuration.nix.");
+            Ok(ExitCode::SUCCESS)
+        } else {
+            warn!("No supported init system detected. Manual start may be required.");
+            Err("Unsupported init system for starting the service.".into())
+        } 
    }
    #[cfg(not(any(windows, unix)))]
    { Err("Service start is not supported on this OS.".into()) }
@@ -560,10 +694,36 @@ async fn stop_service() -> Result<ExitCode, Box<dyn std::error::Error>> {
    #[cfg(windows)] {
        run_os_command("sc", &["stop", "NetterService"], "stop service")
    }
-    #[cfg(unix)] {
-        println!("(Unix) This command may require root privileges (sudo).");
-        run_os_command("sudo", &["systemctl", "stop", "netterd"], "stop daemon")
+   #[cfg(unix)]
+   {
+       println!("(Unix) This command may require root privileges (sudo).");
+       let info = os_info::get();
+       let type_os = info.os_type().to_string().to_lowercase();
+
+       match type_os.as_str() {
+           "devuan" | "slackware" | "tinycore" | "minimal alpine" => {
+               run_os_command("sudo", &["/etc/init.d/netterd", "stop"], "stop daemon")?;
+           }
+           "alpine" | "gentoo" | "artix with openrc" => {
+               run_os_command("sudo", &["rc-service", "netterd", "stop"], "stop daemon")?;
+           }
+           "void" | "artix with runit" => {
+               run_os_command("sudo", &["sv", "down", "netterd"], "stop daemon")?;
+           }
+           "artix with s6" => {
+               run_os_command("sudo", &["s6-svc", "-d", "/run/service/netterd"], "stop daemon")?;
+           }
+           "nixos" => {
+               println!("On NixOS, please remove or disable the service via configuration.nix.");
+           }
+           _ => {
+               run_os_command("sudo", &["systemctl", "stop", "netterd"], "stop daemon")?;
+           }
+       }
+
+       Ok(ExitCode::SUCCESS)
    }
+   
    #[cfg(not(any(windows, unix)))]
    { Err("Service stop is not supported on this OS.".into()) }
 }
@@ -576,7 +736,8 @@ async fn query_service_status() -> Result<ExitCode, Box<dyn std::error::Error>> 
             Err(e) => Err(format!("{e}").into())
         }
     }
-    #[cfg(unix)] {
+    #[cfg(unix)] {  
+        
         println!("> systemctl status netterd");
         let status = std::process::Command::new("systemctl")
             .args(["status", "netterd"])
@@ -621,7 +782,37 @@ fn run_os_command(command: &str, args: &[&str], action_desc: &str) -> Result<Exi
      }
 }
 
-#[cfg(unix)]
+#[cfg(unix)]                     
 fn is_systemd_running() -> bool {
     Path::new("/run/systemd/system").exists()
+}
+
+#[cfg(unix)]
+fn is_sysvinit_running() -> bool {
+    Path::new("/etc/init.d").exists()
+}
+
+#[cfg(unix)]
+fn is_openrc_running() -> bool {
+    Path::new("/etc/init.d").exists() && Path::new("/run/openrc").exists()
+}
+
+#[cfg(unix)]
+fn is_runit_running() -> bool {
+    Path::new("/etc/runit").exists() || Path::new("/run/runit").exists()
+}
+
+#[cfg(unix)]
+fn is_s6_running() -> bool {
+    Path::new("/etc/s6").exists() || Path::new("/run/s6").exists()
+}
+
+#[cfg(unix)]
+fn is_tinycore_running() -> bool {
+    Path::new("/etc/init.d").exists()
+}
+
+#[cfg(unix)]
+fn is_nixos_running() -> bool {
+    Path::new("/etc/nixos").exists()
 }
