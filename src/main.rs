@@ -6,12 +6,11 @@ use log::{
     error,
     trace,
     debug,
-    warn,
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 #[cfg(windows)]
-use tokio::net::windows::named_pipe::{ClientOptions, NamedPipeClient};
+use tokio::net::windows::named_pipe::ClientOptions;
 #[cfg(unix)]
 use tokio::net::UnixStream;
 
@@ -357,11 +356,11 @@ async fn install_service() -> Result<ExitCode, Box<dyn std::error::Error>> {
             println!("Service created successfully.");
             println!("You may need to configure firewall rules if servers listen on non-local addresses.");
             println!("Use 'netter service start' to start the service.");
-            Ok(ExitCode::SUCCESS)
+            return Ok(ExitCode::SUCCESS)
         } else {
             let stderr = String::from_utf8_lossy(&output.stderr);
             error!("sc create failed: {}", stderr);
-            Err(format!("Failed to create service: {}", stderr).into())
+            return Err(format!("Failed to create service: {}", stderr).into())
         }
     }
     #[cfg(unix)]
@@ -404,15 +403,14 @@ async fn install_service() -> Result<ExitCode, Box<dyn std::error::Error>> {
                 let _ = distributions_pathes(SERVICE_DEST_STR, UNIT_FILE_PATH).await;
             }
         }
-
     }
     #[cfg(not(any(windows, unix)))]
     {
         Err("Unsupported OS for service installation.".into())
     }
-    Ok(ExitCode::SUCCESS)
 }
 
+#[cfg(unix)]
 async fn distributions_pathes(service_dest_str: &str, unit_file_path: &str) -> Result<ExitCode, Box<dyn std::error::Error>> {
     println!("(Unix) This command requires root privileges (sudo).");
     println!("Attempting basic installation (copy executable and create systemd unit)...");
@@ -517,16 +515,16 @@ async fn uninstall_service() -> Result<ExitCode, Box<dyn std::error::Error>> {
        let output = std::process::Command::new("sc").args(["delete", "NetterService"]).output()?;
        if output.status.success() {
            println!("Service 'NetterService' deleted successfully.");
-           Ok(ExitCode::SUCCESS)
+           return Ok(ExitCode::SUCCESS)
        } else {
            let stderr = String::from_utf8_lossy(&output.stderr);
             
            if stderr.contains("does not exist") || stderr.contains("не существует") {
                println!("Service 'NetterService' was not found (already uninstalled?).");
-               Ok(ExitCode::SUCCESS)
+               return Ok(ExitCode::SUCCESS)
            } else {
                error!("sc delete failed: {}", stderr);
-               Err(format!("Failed to delete service: {}", stderr).into())
+               return Err(format!("Failed to delete service: {}", stderr).into())
            }
        }
    }
@@ -575,9 +573,9 @@ async fn uninstall_service() -> Result<ExitCode, Box<dyn std::error::Error>> {
    {
        Err("Service uninstallation is not supported on this OS.".into())
    }
-   Ok(ExitCode::SUCCESS)
 }
 
+#[cfg(unix)]
 async fn uninstall_netterd_service(service_dest_str: &str, unit_file_path: &str) -> Result<ExitCode, Box<dyn std::error::Error>> {
     println!("(Unix) This command requires root privileges (sudo).");
 
