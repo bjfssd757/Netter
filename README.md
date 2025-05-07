@@ -99,7 +99,7 @@ Stop a server using the `stop` command and the `-i` (or `--id`) flag, which take
 netter stop -i id
 ```
 
-[Route Definition Language Documentation](RDL_DOCUMENTATION_ru.md)
+[Route Definition Language Documentation](RDL_DOCUMENTATION_ru.md)\
 [Create plugins for RDL](PLUGINS_DOCUMENTATION.md)
 
 ## Installation
