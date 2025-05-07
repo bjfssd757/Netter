@@ -13,7 +13,6 @@ Netter is a tool for quickly and easily launching servers.
 
 * Desktop client (UI);
 * Support for other server types (besides HTTP/HTTPS): WebSocket, **gRPC**, TCP/UDP sockets;
-* Ability to integrate Rust plugins into RDL.
 
 ## Features
 
@@ -21,6 +20,7 @@ Netter is a tool for quickly and easily launching servers.
 * Error handling in RDL;
 * TLS support;
 * Own daemon/service (depending on the OS);
+* Ability to integrate Rust plugins into RDL.
 
 ## Documentation
 
