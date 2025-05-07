@@ -387,6 +387,10 @@ async fn download_service() -> Result<ExitCode, Box<dyn std::error::Error>> {
             .map_err(|e| format!("Failed to create directory: {}", e))?;
 
         for i in 0..archive.len() {
+            std::thread::sleep(
+                std::time::Duration::from_millis(500)
+            );
+
             let mut file = archive.by_index(i)
                 .map_err(|e| format!("Failed to read file from archive: {}", e))?;
 
@@ -492,11 +496,8 @@ async fn install_service() -> Result<ExitCode, Box<dyn std::error::Error>> {
         let current_exe = std::env::current_exe()?;
         let service_exe = current_exe.parent().ok_or("Cannot find parent directory")?.join("netter_service.exe");
         if !service_exe.exists() {
-            println!("Service executable not found. Attempting to download...");
-            if let Err(e) = download_service().await {
-                error!("Failed to download service: {}", e);
-                return Err(format!("Failed to download service: {}", e).into());
-            }
+            println!("Service executable 'netter_service.exe' not found in the directory: {}", service_exe.parent().unwrap_or(Path::new(".")).display());
+            println!("Please download the service first using 'netter download' command.");
         }
         let service_path_str = service_exe.to_str().ok_or("Invalid service path encoding")?;
 
