@@ -1,3 +1,5 @@
+use std::f64::consts::E;
+
 use crate::language::operators::{
     Token,
     TokenType,
@@ -31,6 +33,7 @@ impl Parser {
         let mut tls_config = None;
         let mut global_error_handler = None;
         let mut config = None;
+        let mut imports = Vec::new();
         
         while !self.is_at_end() {
             if self.check(&TokenType::Tls) {
@@ -50,6 +53,8 @@ impl Parser {
                     return Err("Дублирование блока 'config'".to_string());
                 }
                 config = Some(Box::new(self.config_block()?));
+            } else if self.check(&TokenType::Import) {
+                imports.push(Box::new(self.import()?));
             } else {
                 return Err(format!("Ожидается 'route', 'tls' или 'config', получено: {:?}", self.peek().token_type));
             }
@@ -58,19 +63,42 @@ impl Parser {
         let has_tls = tls_config.is_some();
         let has_global_handler = global_error_handler.is_some();
         let has_config = config.is_some();
+        let program_statements = imports.into_iter().chain(statements.into_iter()).collect();
         
         if has_tls || has_global_handler || has_config {
             Ok(AstNode::ServerConfig {
-                routes: statements,
+                routes: program_statements,
                 tls_config,
                 global_error_handler,
                 config_block: config,
             })
-        } else if !statements.is_empty() {
-            Ok(AstNode::Program(statements))
+        } else if !program_statements.is_empty() {
+            Ok(AstNode::Program(program_statements))
         } else {
             Ok(AstNode::Program(vec![]))
         }
+    }
+
+    fn import(&mut self) -> Result<AstNode, String> {
+        self.consume(&TokenType::Import, "Ожидается ключевое слово 'import'")?;
+    
+        let path_token = self.consume(&TokenType::String(String::new()), "Ожидается строка пути к плагину")?;
+        let path = match &path_token.token_type {
+            TokenType::String(s) => s.clone(),
+            _ => return Err("Ошибка парсинга пути к плагину".to_string()),
+        };
+    
+        self.consume(&TokenType::As, "Ожидается ключевое слово 'as' после пути")?;
+    
+        let alias_token = self.consume(&TokenType::Identifier(String::new()), "Ожидается псевдоним плагина")?;
+        let alias = match &alias_token.token_type {
+            TokenType::Identifier(n) => n.clone(),
+            _ => return Err("Ошибка парсинга псевдонима плагина".to_string()),
+        };
+    
+        self.consume(&TokenType::Semicolon, "Ожидается ';' после импорта плагина")?;
+    
+        Ok(AstNode::Import { path, alias })
     }
 
     fn global_error_handler(&mut self) -> Result<AstNode, String> {
@@ -513,6 +541,33 @@ impl Parser {
                         property: name,
                     };
                 }
+            } else if self.match_token(&TokenType::DoubleColon) {
+                let object_name = match expr {
+                    AstNode::Identifier(ref n) => n.clone(),
+                    _ => return Err(format!("Ожидается идентификатор перед '::', получено: {}", expr)),
+                };
+
+                let fun_name_token = self.consume(&TokenType::Identifier(String::new()),
+                "Ожидается имя функции после '::'")?;
+
+                let fun_name = match &fun_name_token.token_type {
+                    TokenType::Identifier(n) => n.clone(),
+                    _ => return Err("Невозможный случай при парсинге имени функции плагина".to_string()),
+                };
+
+                self.consume(&TokenType::LParen,
+                    "Ожидается '(' после имени функции плагина")?;
+                let args = self.arguments()?;
+                let try_operator = self.match_token(&TokenType::TryOperator);
+                let unwrap_operator = self.match_token(&TokenType::UnwrapOperator);
+
+                expr = AstNode::FunctionCall {
+                    object: Some(Box::new(AstNode::Identifier(object_name))),
+                    name: fun_name,
+                    args,
+                    try_operator,
+                    unwrap_operator,
+                };
             } else if self.match_token(&TokenType::LParen) && matches!(expr, AstNode::Identifier(_)) {
                 let name = match &expr {
                     AstNode::Identifier(n) => n.clone(),

@@ -227,6 +227,7 @@ async fn send_command_to_service(command: Command) -> Result<Response, Box<dyn s
     trace!("Serialized command ({} bytes)", encoded_command.len());
 
     let command_size = encoded_command.len() as u32;
+    info!("Sending command size: {}", command_size);
     stream.write_all(&command_size.to_be_bytes()).await?;
     stream.write_all(&encoded_command).await?;
     stream.flush().await?;

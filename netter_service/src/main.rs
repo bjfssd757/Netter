@@ -676,9 +676,10 @@ mod windows_service_impl {
 
     fn create_pipe_server() -> io::Result<NamedPipeServer> {
         ServerOptions::new()
-            .pipe_mode(PipeMode::Message)
-            .first_pipe_instance(false)
-            .reject_remote_clients(true)
+            // Было: .pipe_mode(PipeMode::Message)
+            .pipe_mode(PipeMode::Byte) // <<< ИЗМЕНИТЬ НА Byte
+            .first_pipe_instance(false) // Оставить как есть (или true, если это первая инстанция)
+            .reject_remote_clients(true) // Оставить как есть
             .create(PIPE_NAME)
     }
 
@@ -686,56 +687,86 @@ mod windows_service_impl {
         let client_id = Uuid::new_v4();
         trace!("[Client {}] Start (WinPipe).", client_id);
 
+        // Блок async для обработки ошибок чтения/парсинга и возврата Result<Command, CoreError>
         let command_result: Result<Command, CoreError> = async {
+            // --- Чтение заголовка размера (4 байта, Big Endian) ---
             let mut size_buf = [0u8; 4];
-            pipe.read_exact(&mut size_buf)
-                .await
-                .map_err(|e| CoreError::IoError(format!("Pipe read size: {}", e)))?;
+            if let Err(e) = pipe.read_exact(&mut size_buf).await {
+                // Ошибка чтения заголовка размера
+                let err_msg = format!("Pipe read size header error: {}", e);
+                error!("[Client {}] {}", client_id, err_msg);
+                return Err(CoreError::IoError(err_msg));
+            }
             let command_size = u32::from_be_bytes(size_buf) as usize;
             trace!("[Client {}] Command size header: {}", client_id, command_size);
 
-            const MAX_CMD_SIZE: usize = 1 * 1024 * 1024;
+            // --- Проверка максимального размера ---
+            const MAX_CMD_SIZE: usize = 1 * 1024 * 1024; // 1 MB limit
             if command_size > MAX_CMD_SIZE {
-                return Err(CoreError::InvalidInput(format!(
+                let err_msg = format!(
                     "Command size {} exceeds limit {}",
                     command_size, MAX_CMD_SIZE
-                )));
+                );
+                error!("[Client {}] {}", client_id, err_msg);
+                return Err(CoreError::InvalidInput(err_msg));
             }
             if command_size == 0 {
-                 return Err(CoreError::InvalidInput("Received zero command size".to_string()));
+                 let err_msg = "Received zero command size".to_string();
+                 error!("[Client {}] {}", client_id, err_msg);
+                 return Err(CoreError::InvalidInput(err_msg));
             }
 
+            // --- Чтение тела команды с read_exact (ожидаем command_size байт) ---
+            // (Предполагается, что канал теперь в PipeMode::Byte)
+            trace!("[Client {}] Attempting to read command body ({} bytes) using read_exact...", client_id, command_size);
             let mut command_buffer = vec![0u8; command_size];
-            pipe.read_exact(&mut command_buffer)
-                .await
-                .map_err(|e| CoreError::IoError(format!("Pipe read body ({} bytes): {}", command_size, e)))?;
+            if let Err(e) = pipe.read_exact(&mut command_buffer).await {
+                // Ошибка чтения тела команды
+                let err_msg = format!("Pipe read_exact body ({} bytes) error: {}", command_size, e);
+                error!("[Client {}] {}", client_id, err_msg);
+                // Больше не нужно проверять os error 234 здесь, так как ожидаем, что read_exact будет работать в Byte режиме
+                return Err(CoreError::IoError(err_msg));
+            }
 
-            trace!("[Client {}] Read {} command bytes.", client_id, command_buffer.len());
+            // --- Десериализация команды ---
+            trace!("[Client {}] Successfully read full command body ({} bytes) using read_exact.", client_id, command_buffer.len());
+            match bincode::deserialize(&command_buffer) {
+                Ok(command) => Ok(command), // Успешно десериализовали
+                Err(e) => {
+                    // Ошибка десериализации
+                    let err_msg = format!("Command deserialization error: {}", e);
+                    error!("[Client {}] {}", client_id, err_msg);
+                    Err(CoreError::DeserializationError(err_msg))
+                }
+            }
+        }.await; // Конец async блока для чтения и десериализации
 
-            bincode::deserialize(&command_buffer)
-                .map_err(|e| CoreError::DeserializationError(format!("Command parse: {}", e)))
-
-        }.await;
-
+        // --- Обработка результата команды (command_result) и формирование ответа ---
         let response = match command_result {
              Ok(command) => {
+                // Команда успешно прочитана и десериализована
                 trace!("[Client {}] Received command: {:?}", client_id, command);
+                // Выполняем команду
                 process_command(command, client_id).await
              }
              Err(e) => {
+                // Ошибка произошла на этапе чтения или десериализации
                 error!("[Client {}] Error reading/parsing command: {}", client_id, e);
-                Err(e)
+                Err(e) // Просто передаем ошибку дальше
              }
         };
 
+        // --- Формирование финального ответа (либо результат process_command, либо ошибка) ---
         let final_response = match response {
-            Ok(r) => r,
+            Ok(r) => r, // Успешный ответ от process_command
             Err(e) => {
+                // Ошибка от process_command или ошибка чтения/парсинга
                 error!("[Client {}] Processing error: {}", client_id, e);
-                Response::Error(e)
+                Response::Error(e) // Преобразуем любую ошибку в Response::Error
             }
         };
 
+        // --- Сериализация и отправка ответа клиенту ---
         match bincode::serialize(&final_response) {
             Ok(response_bytes) => {
                 let response_size = response_bytes.len() as u32;
@@ -743,17 +774,20 @@ mod windows_service_impl {
                     "[Client {}] Sending response ({} bytes): {:?}",
                     client_id,
                     response_size,
-                    final_response
+                    final_response // Логируем сам ответ для отладки
                 );
 
+                // Отправляем размер ответа (4 байта, Big Endian)
                 if let Err(e) = pipe.write_all(&response_size.to_be_bytes()).await {
                     error!("[Client {}] Pipe write response size error: {}", client_id, e);
                 } else {
+                    // Отправляем тело ответа
                     if let Err(e) = pipe.write_all(&response_bytes).await {
                         error!("[Client {}] Pipe write response body error: {}", client_id, e);
                     } else {
+                        // Пытаемся сбросить буферы
                         if let Err(e) = pipe.flush().await {
-                             warn!("[Client {}] Pipe flush error: {}", client_id, e);
+                             warn!("[Client {}] Pipe flush error: {}", client_id, e); // Не критично, но стоит залогировать
                         } else {
                             trace!("[Client {}] Response sent successfully.", client_id);
                         }
@@ -761,18 +795,23 @@ mod windows_service_impl {
                 }
             }
             Err(e) => {
+                // Ошибка сериализации ответа! Отправляем клиенту базовую ошибку.
                 error!("[Client {}] Failed to serialize final response: {}", client_id, e);
                 let error_resp = Response::Error(CoreError::SerializationError(format!("Failed to serialize service response: {}", e)));
                  if let Ok(error_bytes) = bincode::serialize(&error_resp) {
                      let error_size = error_bytes.len() as u32;
+                     // Отправляем размер ошибки
                      if pipe.write_all(&error_size.to_be_bytes()).await.is_ok() {
+                        // Отправляем тело ошибки (если запись размера удалась)
                          let _ = pipe.write_all(&error_bytes).await;
-                         let _ = pipe.flush().await;
+                         let _ = pipe.flush().await; // Пытаемся отправить
                      }
                  }
+                 // Если даже отправка ошибки не удалась, просто логируем выше и завершаем.
             }
         }
 
+        // Закрытие соединения происходит автоматически при выходе из функции (когда pipe выходит из области видимости)
         trace!("[Client {}] Finish (WinPipe).", client_id);
     }
 

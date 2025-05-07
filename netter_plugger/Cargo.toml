@@ -1,0 +1,15 @@
+[package]
+name = "netter_plugger"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+syn = { version = "2.0", features = ["full"] }
+quote = "1.0"
+lazy_static = "1.5.0"
+serde = "1.0.219"
+serde_json = "1.0.140"
+ctor = "0.4.2"
+
+[lib]
+proc-macro = true

@@ -43,6 +43,10 @@ pub enum TokenType {
     // -------- //
     Concatenation,      // +
     PlusEqual,          // +=
+    // -------- //
+    Import,            // import
+    As,                // as
+    DoubleColon,       // ::
 }
 
 #[derive(Debug, Clone)]
@@ -90,6 +94,9 @@ impl fmt::Display for Token {
             TokenType::Port => write!(f, "port"),
             TokenType::Concatenation => write!(f, "+"),
             TokenType::PlusEqual => write!(f, "+="),
+            TokenType::Import => write!(f, "import"),
+            TokenType::As => write!(f, "as"),
+            TokenType::DoubleColon => write!(f, "::"),
         }
     }
 }

@@ -244,7 +244,16 @@ impl Lexer {
                     } else {
                         Ok(Token { token_type: TokenType::Concatenation, line, column })
                     }
-                }
+                },
+                ':' => {
+                    self.consume();
+                    if self.peek() == Some(':') {
+                        self.consume();
+                        Ok(Token { token_type: TokenType::DoubleColon, line, column })
+                    } else {
+                        Err(format!("Неизвестный символ: '{}', строка {} колонка {}", ch, line, column))
+                    }
+                },
                 _ if ch.is_alphabetic() => {
                     let ident = self.read_identifier();
                     match ident.as_str() {
@@ -262,6 +271,8 @@ impl Lexer {
                         "type" => Ok(Token { token_type: TokenType::TypeName, line, column }),
                         "host" => Ok(Token { token_type: TokenType::Host, line, column }),
                         "port" => Ok(Token { token_type: TokenType::Port, line, column }),
+                        "import" => Ok(Token { token_type: TokenType::Import, line, column }),
+                        "as" => Ok(Token { token_type: TokenType::As, line, column }),
                         "GET" | "POST" | "PUT" | "DELETE" | "PATCH" | "HEAD" | "OPTIONS" => 
                             Ok(Token { token_type: TokenType::HttpMethod(ident), line, column }),
                         _ => Ok(Token { token_type: TokenType::Identifier(ident), line, column }),
@@ -359,6 +370,10 @@ pub enum AstNode {
         host: String,
         port: String,
     },
+    Import {
+        path: String,
+        alias: String,
+    }
 }
 
 impl fmt::Display for AstNode {
@@ -469,6 +484,9 @@ impl fmt::Display for AstNode {
                 writeln!(f, "   port: {}", port)?;
                 writeln!(f, "}}")
             },
+            AstNode::Import { path, alias } => {
+                writeln!(f, "import \"{}\" as {}", path, alias)
+            }
         }
     }
 }
