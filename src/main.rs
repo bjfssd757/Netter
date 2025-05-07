@@ -6,6 +6,7 @@ use log::{
     error,
     trace,
     debug,
+    warn
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -373,31 +374,31 @@ async fn install_service() -> Result<ExitCode, Box<dyn std::error::Error>> {
                 const SERVICE_DEST_STR: &str = "/usr/local/bin/netterd";
                 const UNIT_FILE_PATH: &str = "/etc/init.d/netterd";
                 let res = distributions_pathes(SERVICE_DEST_STR, UNIT_FILE_PATH).await?;
-                Ok(res)
+                Ok(res?)
             }
             "alpine" | "gentoo" | "artix with openrc" => {
                 const SERVICE_DEST_STR: &str = "/usr/local/bin/netterd";
                 const UNIT_FILE_PATH: &str = "/etc/init.d/netterd";
                 let res = distributions_pathes(SERVICE_DEST_STR, UNIT_FILE_PATH).await?;
-                Ok(res)
+                Ok(res?)
             }
             "void" | "artix with runit" => {
                 const SERVICE_DEST_STR: &str = "/usr/local/bin/netterd";
                 const UNIT_FILE_PATH: &str = "/etc/sv/netterd/run";
                 let res = distributions_pathes(SERVICE_DEST_STR, UNIT_FILE_PATH).await?;
-                Ok(res)
+                Ok(res?)
             }
             "artix with s6" => {
                 const SERVICE_DEST_STR: &str = "/usr/local/bin/netterd";
                 const UNIT_FILE_PATH: &str = "/etc/s6/sv/netterd/run";
                 let res = distributions_pathes(SERVICE_DEST_STR, UNIT_FILE_PATH).await?;
-                Ok(res)
+                Ok(res?)
             }
             "tinycore" | "minimal alpine" => {
                 const SERVICE_DEST_STR: &str = "/usr/local/bin/netterd";
                 const UNIT_FILE_PATH: &str = "/etc/init.d/netterd";
                 let res = distributions_pathes(SERVICE_DEST_STR, UNIT_FILE_PATH).await?;
-                Ok(res)
+                Ok(res?)
             }
             "nixos" => {
                 println!("For NixOS, services must be defined in the system configuration.");
@@ -407,7 +408,7 @@ async fn install_service() -> Result<ExitCode, Box<dyn std::error::Error>> {
                 const SERVICE_DEST_STR: &str = "/usr/local/bin/netterd";
                 const UNIT_FILE_PATH: &str = "/etc/systemd/system/netterd.service";
          let res = distributions_pathes(SERVICE_DEST_STR, UNIT_FILE_PATH).await?;
-                 Ok(res)
+                 Ok(res?)
             }
         }
     }
@@ -545,31 +546,31 @@ async fn uninstall_service() -> Result<ExitCode, Box<dyn std::error::Error>> {
                 const SERVICE_DEST_STR: &str = "/usr/local/bin/netterd";
                 const UNIT_FILE_PATH: &str = "/etc/init.d/netterd";
                 let res = uninstall_netterd_service(SERVICE_DEST_STR, UNIT_FILE_PATH).await?;
-                Ok(res)
+                Ok(res?)
             }
             "alpine" | "gentoo" | "artix with openrc" => {
                 const SERVICE_DEST_STR: &str = "/usr/local/bin/netterd";
                 const UNIT_FILE_PATH: &str = "/etc/init.d/netterd";
                 let res = uninstall_netterd_service(SERVICE_DEST_STR, UNIT_FILE_PATH).await?;
-                Ok(res)
+                Ok(res?)
             }
             "void" | "artix with runit" => {
                 const SERVICE_DEST_STR: &str = "/usr/local/bin/netterd";
                 const UNIT_FILE_PATH: &str = "/etc/sv/netterd/run";
                 let res = uninstall_netterd_service(SERVICE_DEST_STR, UNIT_FILE_PATH).await?;
-                Ok(res)
+                Ok(res?)
             }
             "artix with s6" => {
                 const SERVICE_DEST_STR: &str = "/usr/local/bin/netterd";
                 const UNIT_FILE_PATH: &str = "/etc/s6/sv/netterd/run";
                 let res = uninstall_netterd_service(SERVICE_DEST_STR, UNIT_FILE_PATH).await?;
-                Ok(res)
+                Ok(res?)
             }
             "tinycore" | "minimal alpine" => {
                 const SERVICE_DEST_STR: &str = "/usr/local/bin/netterd";
                 const UNIT_FILE_PATH: &str = "/etc/init.d/netterd";
                 let res = uninstall_netterd_service(SERVICE_DEST_STR, UNIT_FILE_PATH).await?;
-                Ok(res)
+                Ok(res?)
             }
             "nixos" => {
                 println!("For NixOS, services must be defined in the system configuration.");
@@ -579,7 +580,7 @@ async fn uninstall_service() -> Result<ExitCode, Box<dyn std::error::Error>> {
                 const SERVICE_DEST_STR: &str = "/usr/local/bin/netterd";
                 const UNIT_FILE_PATH: &str = "/etc/systemd/system/netterd.service";
                 let res = uninstall_netterd_service(SERVICE_DEST_STR, UNIT_FILE_PATH).await;
-                Ok(res)
+                Ok(res?)
             }
         }
    }
