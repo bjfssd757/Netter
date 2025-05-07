@@ -61,6 +61,7 @@ enum Commands {
     List,
     Update,
     Install,
+    Download,
     Uninstall,
     ServiceStart,
     ServiceStop,
@@ -103,6 +104,16 @@ async fn main() -> ExitCode {
                 }
             }
         },
+        Commands::Download => {
+            match download_service().await {
+                Ok(code) => {
+                    return code
+                },
+                Err(_) => {
+                    return ExitCode::FAILURE
+                }
+            }
+        }
         Commands::Uninstall => {
             match uninstall_service().await {
                 Ok(code) => {
@@ -202,7 +213,12 @@ async fn create_service_command(command: Commands) -> Result<Command, Box<dyn st
             Ok(Command::GetAllServersStatus)
         }
         Commands::Update => Ok(Command::CheckForUpdate),
-        Commands::Install | Commands::Uninstall | Commands::ServiceStart | Commands::ServiceStop | Commands::ServiceStatus => {
+        Commands::Install
+        | Commands::Uninstall
+        | Commands::ServiceStart
+        | Commands::ServiceStop
+        | Commands::ServiceStatus
+        | Commands::Download => {
             unreachable!("Management commands should be handled before create_service_command")
         }
     }
@@ -331,6 +347,143 @@ fn print_server_info(info: &ServerInfo) {
     if let Some(pid) = info.pid { println!("  PID:     {}", pid); }
 }
 
+async fn download_service() -> Result<ExitCode, Box<dyn std::error::Error>> {
+    println!("Attempting to download Netter service...");
+
+    #[cfg(windows)]
+    {
+        let url = format!(
+            "https://github.com/bjfssd757/netter/releases/download/v{}/netter-v{}-windows-x86_64.zip",
+            env!("CARGO_PKG_VERSION"),
+            env!("CARGO_PKG_VERSION")
+        );
+
+        println!("Downloading from: {}", url);
+        let response = reqwest::Client::new()
+            .get(&url)
+            .send()
+            .await.map_err(|e| format!("Failed to download file: {}", e))?;
+        let mut content = std::io::Cursor::new(response.bytes()
+            .await
+            .map_err(|e| format!("Failed to read response bytes: {}", e))?);
+
+        let archive_path = format!("netter_service-v{}.zip",
+            env!("CARGO_PKG_VERSION"));
+        let mut file = std::fs::File::create(archive_path.clone())
+            .map_err(|e| format!("Failed to create file: {}", e))?;
+        std::io::copy(&mut content, &mut file)
+            .map_err(|e| format!("Failed to copy content to file: {}", e))?;
+
+        println!("Archive downloaded successfully.");
+        println!("Extracting archive...");
+
+        let file =  std::fs::File::open(archive_path)
+            .map_err(|e| format!("Failed to open file: {}", e))?;
+        let mut archive = zip::ZipArchive::new(file)
+            .map_err(|e| format!("Failed to open zip archive: {}", e))?;
+        let extract_dir = std::env::current_dir()
+            .map_err(|e| format!("Failed to get current directory: {}", e))?;
+        std::fs::create_dir_all(&extract_dir)
+            .map_err(|e| format!("Failed to create directory: {}", e))?;
+
+        for i in 0..archive.len() {
+            let mut file = archive.by_index(i)
+                .map_err(|e| format!("Failed to read file from archive: {}", e))?;
+
+            let outpath = std::path::Path::new(&extract_dir)
+                .join(file.name());
+
+            if file.name().ends_with('/') {
+                std::fs::create_dir_all(&outpath)
+                    .map_err(|e| format!("Failed to create directory: {}", e))?;
+            } else {
+                let mut outfile = std::fs::File::create(&outpath)
+                    .map_err(|e| format!("Failed to create file: {}", e))?;
+                std::io::copy(&mut file, &mut outfile)
+                    .map_err(|e| format!("Failed to copy file: {}", e))?;
+            }
+        }
+
+        println!("Archive extracted successfully to {}", &extract_dir.display());
+
+        let exe_path = std::path::Path::new(&extract_dir)
+            .join("netter_service.exe");
+        if exe_path.exists() {
+            println!("Found executable: {}", exe_path.display());
+        }
+
+        Ok(ExitCode::SUCCESS)
+    }
+
+    #[cfg(unix)]
+    {
+        let url = format!(
+            "https://github.com/bjfssd757/netter/releases/download/v{}/netter-v{}-linux-x86_64.tar.gz",
+            env!("CARGO_PKG_VERSION"),
+            env!("CARGO_PKG_VERSION")
+        );
+    
+        println!("Downloading from: {}", url);
+        let response = reqwest::Client::new()
+            .get(&url)
+            .send()
+            .await
+            .map_err(|e| format!("Failed to download file: {}", e))?;
+        let mut content = std::io::Cursor::new(response.bytes()
+            .await
+            .map_err(|e| format!("Failed to read response bytes: {}", e))?);
+    
+        let archive_path = format!("netter_service-v{}.tar.gz",
+            env!("CARGO_PKG_VERSION"));
+        let mut file = std::fs::File::create(&archive_path)
+            .map_err(|e| format!("Failed to create file: {}", e))?;
+        std::io::copy(&mut content, &mut file)
+            .map_err(|e| format!("Failed to copy content to file: {}", e))?;
+    
+        println!("Archive downloaded successfully.");
+        println!("Extracting archive...");
+    
+        let tar_gz = std::fs::File::open(&archive_path)
+            .map_err(|e| format!("Failed to open file: {}", e))?;
+        let tar = flate2::read::GzDecoder::new(tar_gz);
+        let mut archive = tar::Archive::new(tar);
+        let extract_dir = std::env::current_dir()
+            .map_err(|e| format!("Failed to get current directory: {}", e))?;
+        archive.unpack(&extract_dir)
+            .map_err(|e| format!("Failed to extract archive: {}", e))?;
+        let entries = archive.entries()
+            .map_err(|e| format!("Failed to read entries: {}", e))?;
+
+        for entry in entries {
+            let mut entry = entry
+                .map_err(|e| format!("Failed to read entry: {}", e))?;
+            let path = entry
+            .path()
+            .to_path_buf()
+            .map_err(|e| format!("Failed to get entry path: {}", e))?;
+        
+            if path.is_dir() {
+                println!("Extracting directory: {:?}", path);
+            } else {
+                println!("Extracting file: {:?}", path);
+            }
+        
+            entry.unpack_in(&extract_dir)
+                .map_err(|e| format!("Failed to unpack entry: {}", e))?;
+        }
+    
+        println!("Archive extracted successfully to {}", &extract_dir.display());
+    
+        let exe_path = std::path::Path::new(&extract_dir)
+            .join("netter_service");
+        if exe_path.exists() {
+            println!("Found executable: {}", exe_path.display());
+        }
+    
+        Ok(ExitCode::SUCCESS)
+    }
+}
+
 async fn install_service() -> Result<ExitCode, Box<dyn std::error::Error>> {
     info!("Attempting to install Netter service...");
     #[cfg(windows)]
@@ -339,7 +492,11 @@ async fn install_service() -> Result<ExitCode, Box<dyn std::error::Error>> {
         let current_exe = std::env::current_exe()?;
         let service_exe = current_exe.parent().ok_or("Cannot find parent directory")?.join("netter_service.exe");
         if !service_exe.exists() {
-            return Err(format!("netter_service.exe not found in the same directory as the CLI: {}", service_exe.display()).into());
+            println!("Service executable not found. Attempting to download...");
+            if let Err(e) = download_service().await {
+                error!("Failed to download service: {}", e);
+                return Err(format!("Failed to download service: {}", e).into());
+            }
         }
         let service_path_str = service_exe.to_str().ok_or("Invalid service path encoding")?;
 
