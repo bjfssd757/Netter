@@ -26,7 +26,7 @@ use netter_core::{
 #[cfg(windows)]
 const IPC_PATH: &str = r"\\.\pipe\MyNetterServicePipe";
 #[cfg(unix)]
-const IPC_PATH: &str = "/tmp/netterd/netterd.sock";
+const IPC_PATH: &str = "/run/netterservice/netterd.sock";
 
 const CLI_LOG_DIR: &str = "logs_cli";
 
