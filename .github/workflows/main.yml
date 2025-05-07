@@ -68,7 +68,7 @@ jobs:
       - name: Make tar.gz archive
         run: |
           tag="${GITHUB_REF_NAME}"
-          tar -czvf "netter-${tag}-linux-x86_64.tar.gz" -C dist Netter Netter_service
+          tar -czvf "netter-${tag}-linux-x86_64.tar.gz" -C dist netter netter_service
 
       - name: Upload binaries
         uses: softprops/action-gh-release@v2
