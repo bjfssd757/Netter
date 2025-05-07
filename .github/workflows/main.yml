@@ -26,8 +26,8 @@ jobs:
       - name: Prepare artifacts
         run: |
           mkdir dist
-          copy target\release\Netter.exe dist\
-          copy target\release\Netter_service.exe dist\
+          copy target\release\netter.exe dist\
+          copy target\release\netter_service.exe dist\
 
       - name: Make zip archive
         run: |
@@ -62,8 +62,8 @@ jobs:
       - name: Prepare artifacts
         run: |
           mkdir dist
-          cp target/release/Netter dist/
-          cp target/release/Netter_service dist/
+          cp target/release/netter dist/
+          cp target/release/netter_service dist/
 
       - name: Make tar.gz archive
         run: |
