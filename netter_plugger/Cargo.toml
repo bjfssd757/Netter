@@ -2,6 +2,9 @@
 name = "netter_plugger"
 version = "0.1.0"
 edition = "2024"
+description = "Netter plugger is a crate for easy development plugins for netter RDL"
+license = "MIT"
+repository = "https://github.com/bjfssd757/Netter"
 
 [dependencies]
 syn = { version = "2.0", features = ["full"] }

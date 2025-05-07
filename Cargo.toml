@@ -1,6 +1,6 @@
 [package]
 name = "netter"
-version = "0.4.1"
+version = "0.5.0"
 edition = "2024"
 description = "Netter is a CLI tool for fast and easy server startup!"
 license = "MIT"

@@ -367,16 +367,6 @@ dependencies = [
 
 [[package]]
 name = "ctor"
-version = "0.2.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "32a2785755761f3ddc1492979ce1e48d2c00d09311c39e4466429188f3dd6501"
-dependencies = [
- "quote",
- "syn",
-]
-
-[[package]]
-name = "ctor"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a4735f265ba6a1188052ca32d461028a7d1125868be18e287e756019da7607b5"
@@ -1170,7 +1160,7 @@ dependencies = [
 
 [[package]]
 name = "netter"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "bincode",
  "clap",
@@ -1238,23 +1228,12 @@ dependencies = [
 name = "netter_plugger"
 version = "0.1.0"
 dependencies = [
- "ctor 0.4.2",
+ "ctor",
  "lazy_static",
  "quote",
  "serde",
  "serde_json",
  "syn",
-]
-
-[[package]]
-name = "netter_plugins_hub"
-version = "0.1.0"
-dependencies = [
- "ctor 0.2.9",
- "lazy_static",
- "netter_plugger",
- "serde",
- "serde_json",
 ]
 
 [[package]]
