@@ -99,7 +99,8 @@ netter start --config path/to/file.rd
 netter stop -i id
 ```
 
-[Документация по Route Definition Language](RDL_DOCUMENTATION_ru.md)
+[Документация по Route Definition Language](RDL_DOCUMENTATION_ru.md)\
+[Документация по созданию плагинов для RDL](PLUGINS_DOCUMENTATION_ru.md)
 
 ## Установка
 
