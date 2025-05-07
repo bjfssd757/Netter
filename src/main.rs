@@ -401,7 +401,7 @@ async fn install_service() -> Result<ExitCode, Box<dyn std::error::Error>> {
             }
             "nixos" => {
                 println!("For NixOS, services must be defined in the system configuration.");
-                Err"Not supported OS".into())
+                Err("Not supported OS".into())
             }
             _ => {
                 const SERVICE_DEST_STR: &str = "/usr/local/bin/netterd";
