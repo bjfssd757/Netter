@@ -463,8 +463,8 @@ async fn distributions_pathes(service_dest_str: &str, unit_file_path: &str) -> R
         ExecStart={}
         WorkingDirectory={}
         Restart=on-failure
-        User=nobody
-        Group=nogroup
+        User=root
+        Group=root
         StandardOutput=journal
         StandardError=journal
 
