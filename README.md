@@ -32,7 +32,7 @@ To install the daemon or service, use the `install` command:
 netter install
 ```
 
-> [!WARN]
+> [!WARNING]
 > The service executable (`netter_service`) must be in the same directory as the CLI.
 
 ### Service-Start
@@ -127,7 +127,7 @@ netter stop -i id
 cargo build --release; cargo build --release -p netter_service; cd target/release
 ```
 
-> [!INFO]
+> [!NOTE]
 > `cargo build --release` will create the CLI executable `netter` in `target/release`;
 > `cargo build --release -p netter_service` will create the service executable `netter_service` in `target/release`
 
@@ -163,7 +163,7 @@ cargo build --release; cargo build --release -p netter_service; cd target/releas
 cargo build --release; cargo build --release -p netter_service; cd target/release
 ```
 
-> [!INFO]
+> [!NOTE]
 > `cargo build --release` will create the CLI executable `netter` in `target/release`;
 > `cargo build --release -p netter_service` will create the daemon executable `netter_service` in `target/release`
 

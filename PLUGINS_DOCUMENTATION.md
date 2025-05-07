@@ -49,7 +49,7 @@ fn check_flag(flag: bool) -> Result<String, String> {
 * `generate_dispatch_func!();` - this macro initializes the entry point for the plugin. It is crucial to place this macro at the very top of your code (right after all `use` statements);
 * `#[netter_plugin]` - an attribute that marks functions for integration into RDL.
 
-> [!WARN]
+> [!WARNING]
 > Functions integrated into RDL have important restrictions:
 > **Input Data Types**
 > The function can only accept the following input types: *String*, *&str*, *i64*, *i32*, *f64*, *f32*, *bool*.
@@ -69,7 +69,7 @@ Keep this in mind, although problems are usually rare.
 
 To call your plugin functions from RDL, you need to generate a dynamic library from your plugin code:
 
-> [!INFO]
+> [!NOTE]
 > Your Rust project must be initialized with the `--lib` flag:
 > `cargo init --lib`
 
@@ -79,6 +79,12 @@ Add the following to your `Cargo.toml`:
 
 ```toml
 [dependencies]
+syn = { version = "2.0", features = ["full"] }
+quote = "1.0"
+lazy_static = "1.5.0"
+serde = "1.0.219"
+serde_json = "1.0.140"
+ctor = "0.4.2"
 netter_plugger = "0.1.0"
 ...
 
@@ -86,6 +92,7 @@ netter_plugger = "0.1.0"
 crate-type = ["cdylib"]
 ```
 
+All dependencies listed in the code above must be added to your Cargo.toml.
 Choose the latest plugin version to avoid compatibility issues and to access all the crate's functionality!
 
 ### Building
@@ -123,6 +130,6 @@ route "/" GET {
 };
 ```
 
-> [!INFO]
+> [!IMPORTANT]
 > You may have noticed the `?` after calling the plugin function. It is required to catch an error if the function encounters one, so you need to handle this error just like any other errors.
 > However, if you are confident that no error will occur, you can ignore it using `!!`, but in case of an error, the code will terminate with a panic (emergency exit).
