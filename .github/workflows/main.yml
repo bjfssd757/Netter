@@ -4,6 +4,10 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Тег релиза (например, v0.5.0). Если пусто — будет использоваться текущий тег релиза.'
+        required: false
 
 jobs:
   build-windows:
@@ -17,10 +21,10 @@ jobs:
           toolchain: stable
           override: true
 
-      - name: Build Netter.exe
+      - name: Build netter.exe
         run: cargo build --release
 
-      - name: Build Netter_service.exe
+      - name: Build netter_service.exe
         run: cargo build --release -p netter_service
 
       - name: Prepare artifacts
@@ -29,15 +33,29 @@ jobs:
           copy target\release\netter.exe dist\
           copy target\release\netter_service.exe dist\
 
+      - name: Determine tag name
+        id: get_tag
+        run: |
+          if ($env:GITHUB_EVENT_NAME -eq 'release') {
+            $tag = "${env:GITHUB_REF_NAME}"
+          } elseif ($env:GITHUB_EVENT_NAME -eq 'workflow_dispatch' -and "${{ github.event.inputs.tag }}") {
+            $tag = "${{ github.event.inputs.tag }}"
+          } else {
+            Write-Host "ERROR: Тег релиза не определён!"
+            exit 1
+          }
+          echo "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
       - name: Make zip archive
         run: |
-          $tag = "${{ github.ref_name }}"
+          $tag = "${{ steps.get_tag.outputs.tag }}"
           Compress-Archive -Path dist\* -DestinationPath "netter-$tag-windows-x86_64.zip"
         shell: pwsh
 
-      - name: Upload binaries
+      - name: Upload binaries to release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.get_tag.outputs.tag }}
           files: netter-*-windows-x86_64.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -53,10 +71,10 @@ jobs:
           toolchain: stable
           override: true
 
-      - name: Build Netter
+      - name: Build netter
         run: cargo build --release
 
-      - name: Build Netter_service
+      - name: Build netter_service
         run: cargo build --release -p netter_service
 
       - name: Prepare artifacts
@@ -65,14 +83,29 @@ jobs:
           cp target/release/netter dist/
           cp target/release/netter_service dist/
 
+      - name: Determine tag name
+        id: get_tag
+        run: |
+          if [ "${GITHUB_EVENT_NAME}" = "release" ]; then
+            tag="${GITHUB_REF_NAME}"
+          elif [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.tag }}" ]; then
+            tag="${{ github.event.inputs.tag }}"
+          else
+            echo "ERROR: Тег релиза не определён!"
+            exit 1
+          fi
+          echo "tag=$tag" >> $GITHUB_OUTPUT
+
       - name: Make tar.gz archive
         run: |
-          tag="${GITHUB_REF_NAME}"
-          tar -czvf "netter-${tag}-linux-x86_64.tar.gz" -C dist netter netter_service
+          tag="${{ steps.get_tag.outputs.tag }}"
+          cd dist
+          tar -czvf "../netter-${tag}-linux-x86_64.tar.gz" netter netter_service
 
-      - name: Upload binaries
+      - name: Upload binaries to release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.get_tag.outputs.tag }}
           files: netter-*-linux-x86_64.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
