@@ -80,12 +80,19 @@ fn check_flag(flag: bool) -> Result<String, String> {
 ```toml
 [dependencies]
 netter_plugger = "0.1.0"
+syn = { version = "2.0", features = ["full"] }
+quote = "1.0"
+lazy_static = "1.5.0"
+serde = "1.0.219"
+serde_json = "1.0.140"
+ctor = "0.4.2"
 ...
 
 [lib]
 crate-type = ["cdylib"]
 ```
 
+Все зависимости, который указаны в кодде выше, обязательно должны быть добавлны в ваш Cargo.toml
 Версию плагина выбирайте самую последнюю, чтобы избежать проблем с несовместимостью весрий и получить доступ ко всему функционалу крейта!
 
 ### Сборка
