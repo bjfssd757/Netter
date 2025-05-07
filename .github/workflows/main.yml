@@ -1,0 +1,77 @@
+name: Release Binaries
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Build Netter.exe
+        run: cargo build --release
+
+      - name: Build Netter_service.exe
+        run: cargo build --release -p netter_service
+
+      - name: Prepare artifacts
+        run: |
+          mkdir dist
+          copy target\release\Netter.exe dist\
+          copy target\release\Netter_service.exe dist\
+
+      - name: Make zip archive
+        run: |
+          $tag = "${{ github.ref_name }}"
+          Compress-Archive -Path dist\* -DestinationPath "netter-$tag-windows-x86_64.zip"
+        shell: pwsh
+
+      - name: Upload binaries
+        uses: softprops/action-gh-release@v2
+        with:
+          files: netter-*-windows-x86_64.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Build Netter
+        run: cargo build --release
+
+      - name: Build Netter_service
+        run: cargo build --release -p netter_service
+
+      - name: Prepare artifacts
+        run: |
+          mkdir dist
+          cp target/release/Netter dist/
+          cp target/release/Netter_service dist/
+
+      - name: Make tar.gz archive
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          tar -czvf "netter-${tag}-linux-x86_64.tar.gz" -C dist Netter Netter_service
+
+      - name: Upload binaries
+        uses: softprops/action-gh-release@v2
+        with:
+          files: netter-*-linux-x86_64.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
