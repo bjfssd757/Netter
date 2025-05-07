@@ -79,6 +79,12 @@ Add the following to your `Cargo.toml`:
 
 ```toml
 [dependencies]
+syn = { version = "2.0", features = ["full"] }
+quote = "1.0"
+lazy_static = "1.5.0"
+serde = "1.0.219"
+serde_json = "1.0.140"
+ctor = "0.4.2"
 netter_plugger = "0.1.0"
 ...
 
@@ -86,6 +92,7 @@ netter_plugger = "0.1.0"
 crate-type = ["cdylib"]
 ```
 
+All dependencies listed in the code above must be added to your Cargo.toml.
 Choose the latest plugin version to avoid compatibility issues and to access all the crate's functionality!
 
 ### Building
