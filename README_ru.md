@@ -32,7 +32,7 @@ Netter - это инструмент для быстрого и простого
 netter install
 ```
 
-> [!WARN]
+> [!WARNING]
 > Исполняемый файл сервиса (`netter_service`) должен быть в той же директории, что и CLI
 
 ### Service-Start
@@ -127,7 +127,7 @@ netter stop -i id
 cargo build --release; cargo build --release -p netter_service; cd target/release
 ```
 
-> [!INFO]
+> [!NOTE]
 > `cargo build --release` создаст в target/release исполняемый файл CLI `netter`;
 > `cargo build --release -p netter_service` создаст в target/release исполняемый файл службы `netter_service`
 
@@ -163,7 +163,7 @@ cargo build --release; cargo build --release -p netter_service; cd target/releas
 cargo build --release; cargo build --release -p netter_service; cd target/release
 ```
 
-> [!INFO]
+> [!NOTE]
 > `cargo build --release` создаст в target/release исполняемый файл CLI `netter`;
 > `cargo build --release -p netter_service` создаст в target/release исполняемый файл демона `netter_service`
 
