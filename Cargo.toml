@@ -10,7 +10,7 @@ repository = "https://github.com/bjfssd757/Netter"
 members = [
     "netter_core",
     "netter_logger",
-    "netter_plugger", "netter_plugins_hub",
+    "netter_plugger",
     "netter_service",
 ]
 resolver = "2"
