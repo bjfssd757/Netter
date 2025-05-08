@@ -1,13 +1,12 @@
-use crate::language::lexer::{AstNode, Lexer};
-use crate::language::operators::{Token, TokenType};
+use crate::language::lexer::AstNode;
 use crate::servers::http_core::TlsConfig;
+use base64::Engine;
 use log::{debug, error, info, trace, warn};
 use std::collections::HashMap;
-use std::fmt;
-
+use crate::servers::http_core::HttpBodyVariant;
 use libloading::{Library, Symbol};
 use serde_json;
-use std::ffi::{CStr, CString};
+use std::ffi::CString;
 use std::os::raw::c_char;
 
 #[derive(Debug, Clone)]
@@ -44,7 +43,7 @@ pub enum RouteAction {
 pub struct Request {
     pub params: HashMap<String, String>,
     pub headers: HashMap<String, String>,
-    pub body: Option<String>,
+    pub body: HttpBodyVariant,
 }
 
 impl Request {
@@ -52,14 +51,28 @@ impl Request {
         Request {
             params: HashMap::new(),
             headers: HashMap::new(),
-            body: None,
+            body: HttpBodyVariant::Empty,
         }
     }
     pub fn get_params(&self, name: &str) -> String {
         self.params.get(name).cloned().unwrap_or_default()
     }
     pub fn get_body(&self) -> String {
-        self.body.clone().unwrap_or_default()
+        match &self.body {
+            HttpBodyVariant::Empty => "".to_string(),
+            HttpBodyVariant::Text(text) => text.clone(),
+            HttpBodyVariant::Bytes(_) => "[Binary Body - Use body_base64() for content]".to_string(),
+        }
+    }
+    pub fn get_body_as_base64(&self) -> String {
+        match &self.body {
+            HttpBodyVariant::Text(s) => base64::engine::general_purpose::STANDARD.encode(s.as_bytes()),
+            HttpBodyVariant::Bytes(bytes_vec) => base64::engine::general_purpose::STANDARD.encode(bytes_vec),
+            HttpBodyVariant::Empty => "".to_string(),
+        }
+    }
+    pub fn is_body_binary(&self) -> bool {
+        matches!(&self.body, HttpBodyVariant::Bytes(_))
     }
 }
 
@@ -86,9 +99,19 @@ impl Response {
     }
     pub fn send(&mut self) {
         self.is_sent = true;
+        if !self.headers.contains_key("Content-Type") && self.body.is_some() {
+            self.headers.insert(
+                "Content-Type".to_string(),
+                "text/plain; charset=utf-8".to_string(),
+            );
+        }
     }
     pub fn status(&mut self, status: u16) {
         self.status = status;
+    }
+    pub fn set_header(&mut self, key: &str, value: &str) -> &mut Self {
+        self.headers.insert(key.to_string(), value.to_string());
+        self
     }
 }
 
@@ -179,7 +202,7 @@ impl Interpreter {
         let mut server_tls_config_opt: Option<&Box<AstNode>> = None;
         let mut server_global_handler_opt: Option<&Box<AstNode>> = None;
         let mut server_config_block_opt: Option<&Box<AstNode>> = None;
-        let mut temp_statements: Vec<Box<AstNode>>;
+        let temp_statements: Vec<Box<AstNode>>;
 
         match ast {
             AstNode::Program(stmts) => {
@@ -1036,7 +1059,7 @@ impl RouteHandler {
                     _ => Err(format!("Метод не найден: Response.{}", name)),
                 },
                 "Request" => match name {
-                    "get_params" => {
+                    "get_params" | "get_param" => {
                         if args.len() == 1 {
                             let param_name = self.evaluate_expr(
                                 &args[0],
@@ -1049,14 +1072,36 @@ impl RouteHandler {
                         } else {
                             Err("Метод Request.get_params требует 1 аргумент".to_string())
                         }
-                    }
-                    "body" => {
+                    },
+                    "get_header" => {
+                        if args.len() == 1 {
+                            let header_name = self.evaluate_expr(&args[0], request, response, context, interpreter)?;
+                            Ok(request.headers.get(&header_name).cloned().unwrap_or_default())
+                        } else {
+                            Err("Метод Request.get_header требует 1 аргумент".to_string())
+                        }
+                    },
+                    "body" | "text_body" => {
                         if args.is_empty() {
                             Ok(request.get_body())
                         } else {
-                            Err("Метод Request.body не принимает аргументы".to_string())
+                            Err(format!("Метод Request.{} не принимает аргументы", name))
                         }
-                    }
+                    },
+                    "body_base64" => {
+                        if args.is_empty() {
+                            Ok(request.get_body_as_base64())
+                        } else {
+                            Err("Метод Request.body_base64 не принимает аргументы".to_string())
+                        }
+                    },
+                    "is_binary" => {
+                        if args.is_empty() {
+                            Ok(request.is_body_binary().to_string())
+                         } else {
+                             Err("Метод Request.is_binary не принимает аргументов".to_string())
+                         }
+                    },
                     _ => Err(format!("Метод не найден: Request.{}", name)),
                 },
                 _ => unreachable!(),
@@ -1071,7 +1116,25 @@ impl RouteHandler {
                     } else {
                         Err("Функция log_error требует 1 аргумент".to_string())
                     }
-                }
+                },
+                "log_info" => {
+                    if args.len() == 1 {
+                        let message = self.evaluate_expr(&args[0], request, response, context, interpreter)?;
+                        info!("{}", message);
+                        Ok("".to_string())
+                    } else {
+                        Err("Функция log_info требует 1 аргумент".to_string())
+                    }
+                },
+                "log_trace" => {
+                    if args.len() == 1 {
+                        let message = self.evaluate_expr(&args[0], request, response, context, interpreter)?;
+                        trace!("{}", message);
+                        Ok("".to_string())
+                    } else {
+                        Err("Функция log_trace требует 1 аргумент".to_string())
+                    }
+                },
                 _ => Err(format!("Глобальная функция не найдена: {}", name)),
             }
         }
@@ -1166,7 +1229,7 @@ pub fn handle_request(
     path: &str,
     params: HashMap<String, String>,
     headers: HashMap<String, String>,
-    body: Option<String>,
+    body: HttpBodyVariant,
 ) -> Response {
     let mut request = Request::new();
     request.params = params;

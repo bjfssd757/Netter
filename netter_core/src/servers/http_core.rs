@@ -1,7 +1,7 @@
 use http_body_util::{combinators::BoxBody, BodyExt, Empty, Full};
 use hyper::{
     body::{self, Bytes},
-    header::{HeaderName, HeaderValue},
+    header::{HeaderName, HeaderValue, CONTENT_TYPE},
     Request,
     Response,
     StatusCode,
@@ -39,6 +39,19 @@ pub struct TlsConfig {
     pub enabled: bool,
     pub cert_path: String,
     pub key_path: String,
+}
+
+#[derive(Debug, Clone)]
+pub enum HttpBodyVariant {
+    Text(String),
+    Bytes(Vec<u8>),
+    Empty,
+}
+
+impl Default for HttpBodyVariant {
+    fn default() -> Self {
+        HttpBodyVariant::Empty
+    }
 }
 
 impl Server {
@@ -154,27 +167,43 @@ pub async fn handle_http_request(
 
     let body_bytes_result = req.into_body().collect().await; 
 
-    let body_str: Option<String> = match body_bytes_result {
+    let interpretable_body: HttpBodyVariant = match body_bytes_result {
         Ok(collected_body) => {
-            let body_bytes = collected_body.to_bytes();
-            if body_bytes.is_empty() {
-                None
+            let actual_body_bytes = collected_body.to_bytes();
+            if actual_body_bytes.is_empty() {
+                HttpBodyVariant::Empty
             } else {
-                match String::from_utf8(body_bytes.to_vec()) {
-                    Ok(s) => {
-                        trace!("[Req: {} {}] Body: {}", method, path, s); 
-                        Some(s)
-                    },
-                    Err(e) => {
-                        warn!("[Req: {} {}] Failed to decode body as UTF-8: {}", method, path, e);
-                        None
+                let content_type_header = hyper_headers.get(CONTENT_TYPE);
+                let is_likely_file_upload = content_type_header
+                    .and_then(|val| val.to_str().ok())
+                    .map_or(false, |ct| {
+                        ct.starts_with("multipart/form-data") ||
+                        ct.starts_with("application/octet-stream")
+                    });
+
+                if is_likely_file_upload {
+                    trace!("[Req: {} {}] Detected file upload (Content-Type: {:?}). Transfering raw bytes...", method, path, content_type_header.map(|h|h.to_str()));
+                    HttpBodyVariant::Bytes(actual_body_bytes.to_vec())
+                } else {
+                    match String::from_utf8(actual_body_bytes.to_vec()) {
+                        Ok(s) => {
+                            trace!("[Req: {} {}] Тело (UTF-8 текст): {}", method, path, s);
+                            HttpBodyVariant::Text(s)
+                        },
+                        Err(e) => {
+                            warn!("[Req: {} {}] Failed to decode body as UTF-8 (Content-Type: {:?}): {}. Transfering raw bytes...",
+                                method,
+                                path,
+                                content_type_header.map(|h|h.to_str()), e);
+                            HttpBodyVariant::Bytes(actual_body_bytes.to_vec())
+                        }
                     }
                 }
             }
         },
         Err(e) => {
             error!("[Req: {} {}] Failed to collect request body: {}", method, path, e);
-            let mut response = hyper::Response::new(full("Error reading request body!"));
+            let mut response = hyper::Response::new(full("Failed while reading request body."));
             *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
             return Ok(response);
         }
@@ -212,7 +241,7 @@ pub async fn handle_http_request(
                 &path,
                 query_params,
                 header_map,
-                body_str, 
+                interpretable_body, 
             );
             trace!("[Req: {} {}] Interpreter response object: {:?}", method, path, response_obj);
             let mut response = Response::new(full(response_obj.body.unwrap_or_default())); 

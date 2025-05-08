@@ -463,8 +463,8 @@ async fn download_service() -> Result<ExitCode, Box<dyn std::error::Error>> {
                 .map_err(|e| format!("Failed to read entry: {}", e))?;
             let path = entry
             .path()
-            .to_path_buf()
-            .map_err(|e| format!("Failed to get entry path: {}", e))?;
+            .map_err(|e| format!("Failed to get entry path: {}", e))?
+            .to_path_buf();
         
             if path.is_dir() {
                 println!("Extracting directory: {:?}", path);
