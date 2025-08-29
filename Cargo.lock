@@ -1374,7 +1374,6 @@ name = "netter_core"
 version = "0.2.0"
 dependencies = [
  "base64",
- "cc",
  "derive_more",
  "futures-util",
  "http-body-util",
