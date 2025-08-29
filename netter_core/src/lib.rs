@@ -1,10 +1,11 @@
-use language::interpreter;
 use serde::{Deserialize, Serialize};
-use servers::http_core;
+use servers::http_core::TlsConfig;
 use std::collections::HashMap;
 use std::error::Error as StdError;
 use std::fmt;
 use log::{error, info, warn};
+use crate::language::parse;
+use crate::language::Interpreter;
 
 pub mod language;
 pub mod servers;
@@ -100,8 +101,8 @@ impl StdError for CoreError {}
 pub enum CoreExecutionResult {
     CliResponse(Response),
     StartHttpServer {
-        interpreter: interpreter::Interpreter,
-        tls_config: Option<http_core::TlsConfig>,
+        interpreter: Interpreter,
+        tls_config: Option<TlsConfig>,
     },
 }
 
@@ -117,10 +118,10 @@ pub async fn execute_core_command(command: Command) -> CoreExecutionResult {
             match config {
                 ConfigSource::CustomLangFileContent(content) => {
                     info!("Parsing Custom Language config...");
-                    match language::parser::parse(&content) {
+                    match parse(&content) {
                         Ok(ast) => {
                             info!("Parsing successful. Interpreting AST...");
-                            let mut interpreter = interpreter::Interpreter::new();
+                            let mut interpreter = Interpreter::new();
                             match interpreter.interpret(&ast) {
                                 Ok(_) => {
                                     info!("Interpretation successful. Preparing HTTP server response.");

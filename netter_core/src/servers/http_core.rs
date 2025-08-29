@@ -20,7 +20,7 @@ use hyper_util::{
 use tokio_rustls::TlsAcceptor;
 use tokio::net::TcpListener;
 use crate::{
-    language::{self, interpreter::Interpreter},
+    language::interpreter::Interpreter,
     CoreError,
 };
 use std::net::SocketAddr;
@@ -29,7 +29,7 @@ use std::time::Duration;
 #[derive(Debug, Clone)] 
 pub struct Server {
     #[debug(skip)] 
-    pub interpreter: Option<Arc<Mutex<Interpreter>>>, 
+    pub interpreter: Option<Arc<Mutex<Interpreter>>>,
     pub tls_config: Option<TlsConfig>, 
     pub rustls_config: Option<Arc<ServerConfig>>, 
 }
@@ -235,13 +235,24 @@ pub async fn handle_http_request(
             };
             trace!("[Req: {} {}] Interpreter locked.", method, path);
 
-            let response_obj = language::interpreter::handle_request(
-                &interpreter_guard, 
+            let body = match interpretable_body {
+                HttpBodyVariant::Bytes(bytes) => {
+                    crate::language::interpreter::builtin::request::HttpBodyVariant::Bytes(bytes)
+                },
+                HttpBodyVariant::Text(text) => {
+                    crate::language::interpreter::builtin::request::HttpBodyVariant::Text(text)
+                },
+                HttpBodyVariant::Empty => {
+                    crate::language::interpreter::builtin::request::HttpBodyVariant::Empty
+                },
+            };
+            let response_obj = Interpreter::handle_request(
+                &interpreter_guard,
                 method.as_str(),
                 &path,
                 query_params,
                 header_map,
-                interpretable_body, 
+                body,
             );
             trace!("[Req: {} {}] Interpreter response object: {:?}", method, path, response_obj);
             let mut response = Response::new(full(response_obj.body.unwrap_or_default())); 

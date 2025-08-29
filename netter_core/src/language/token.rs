@@ -7,6 +7,9 @@ pub enum TokenType {
     Var,                // var
     If,                 // if
     Else,               // else
+    For,                // for
+    While,              // while
+    In,                 // in
     // -------- //
     String(String),     // "..."
     Number(i64),        // 1234...
@@ -17,12 +20,16 @@ pub enum TokenType {
     RBrace,             // }
     LParen,             // (
     RParen,             // )
+    LBracket,           // [
+    RBracket,           // ]
     Semicolon,          // ;
     Dot,                // .
     Comma,              // ,
     Equals,             // =
     DoubleEquals,       // ==
     NotEquals,          // !=
+    LogicalAnd,         // &&
+    LogicalOr,          // ||
     Comment(String),    // Комментарии
     EOF,                // Конец файла
     // -------- //
@@ -43,6 +50,14 @@ pub enum TokenType {
     // -------- //
     Concatenation,      // +
     PlusEqual,          // +=
+    SubstructEqual,     // -=
+    MultiplyEqual,      // *=
+    DivideEqual,        // /=
+    PowerEqual,         // ^=
+    Divide,             // /
+    Substruct,          // -
+    Multiply,           // *
+    Power,              // ^
     // -------- //
     Import,            // import
     As,                // as
@@ -51,9 +66,9 @@ pub enum TokenType {
 
 #[derive(Debug, Clone)]
 pub struct Token {
-    pub(crate) token_type: TokenType,
-    pub(crate) line: usize,
-    pub(crate) column: usize,
+    pub token_type: TokenType,
+    pub line: usize,
+    pub column: usize,
 }
 
 impl fmt::Display for Token {
@@ -72,6 +87,8 @@ impl fmt::Display for Token {
             TokenType::RBrace => write!(f, "}}"),
             TokenType::LParen => write!(f, "("),
             TokenType::RParen => write!(f, ")"),
+            TokenType::LBracket => write!(f, "["),
+            TokenType::RBracket => write!(f, "]"),
             TokenType::Semicolon => write!(f, ";"),
             TokenType::Dot => write!(f, "."),
             TokenType::Comma => write!(f, ","),
@@ -97,6 +114,19 @@ impl fmt::Display for Token {
             TokenType::Import => write!(f, "import"),
             TokenType::As => write!(f, "as"),
             TokenType::DoubleColon => write!(f, "::"),
+            TokenType::For => write!(f, "for"),
+            TokenType::While => write!(f, "while"),
+            TokenType::In => write!(f, "in"),
+            TokenType::LogicalAnd => write!(f, "&&"),
+            TokenType::LogicalOr => write!(f, "||"),
+            TokenType::SubstructEqual => write!(f, "-="),
+            TokenType::MultiplyEqual => write!(f, "*="),
+            TokenType::DivideEqual => write!(f, "/="),
+            TokenType::Divide => write!(f, "/"),
+            TokenType::Substruct => write!(f, "-"),
+            TokenType::Multiply => write!(f, "*"),
+            TokenType::Power => write!(f, "^"),
+            TokenType::PowerEqual => write!(f, "^="),
         }
     }
 }

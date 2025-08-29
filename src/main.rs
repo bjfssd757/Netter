@@ -387,9 +387,9 @@ async fn download_service() -> Result<ExitCode, Box<dyn std::error::Error>> {
             .map_err(|e| format!("Failed to create directory: {}", e))?;
 
         for i in 0..archive.len() {
-            std::thread::sleep(
+            tokio::time::sleep(
                 std::time::Duration::from_millis(500)
-            );
+            ).await;
 
             let mut file = archive.by_index(i)
                 .map_err(|e| format!("Failed to read file from archive: {}", e))?;

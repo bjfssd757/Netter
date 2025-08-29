@@ -175,6 +175,7 @@ pub fn generate_dispatch_func(_item: TokenStream) -> TokenStream {
         }
 
         #[unsafe(no_mangle)]
+        #[unsafe(export_name = "__netter_dispatch")]
         pub extern "C" fn __netter_dispatch(
             func_name_ptr: *const std::os::raw::c_char,
             args_json_ptr: *const std::os::raw::c_char,

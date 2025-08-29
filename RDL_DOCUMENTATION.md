@@ -75,6 +75,52 @@ route "/user" GET {
 };
 ```
 
+## Cycles and conditional constructions
+
+RDL supports the following constructions:
+
+* For loop;
+* While loop;
+* If condition
+
+### for
+
+```rdl
+val mix = ["hello", "hey", 1, 2];
+val body = "";
+for (i in mix) {
+    body += i;
+    body += " ";
+}; // body = "hello hey 1 2"
+```
+
+### while
+
+```rdl
+val a = 2;
+val b = 15 - 3;
+while (a != 5) {
+    a += 1;
+    b -= 2;
+};
+// a = 5
+// b = 6
+```
+
+### if
+
+```rdl
+if (a == b) {
+    ...
+}; // `;` is required if there is no else condition:
+
+if (a == b) {
+    ...
+} else {
+    ...
+}
+```
+
 ## Global Configuration
 
 There are 2 configurations you can set up: tls (connection security settings) and global_error_handler (global error handling).
@@ -124,7 +170,18 @@ Objects:
 - **Request**: This object provides access to request handling functions;
 - **Response**: This object provides access to response configuration functions.
 
-### Functions
+### Global functions
+
+- **log_error(message)**: Logging errors;
+- **log_info(message)**: Logging information;
+- **log_trace(message)**: Logging traces;
+- **array_length(array)**: Returns the length of the specified array;
+- **array_push(array, element)**: Adds an element to the specified array;
+- **array_pop(array)**: Removes and returns the last element of the array;
+- **array_contains(array, element)**: Checks whether the element is present in the array;
+- **array_join(array, separator)**: Joins the elements of the array using the specified separator and returns the resulting string;
+
+### Functions of objects
 
 **Database**:
 
@@ -145,6 +202,14 @@ Objects:
 - **headers()**: Set the response headers;
 - **send()**: Send the assembled response;
 
+**FileSystem**:
+
+- **exists(path)**: Checks if the file exists at the specified path;
+- **read_text(path)**: Returns the contents of the file at the specified path;
+- **write_text(path, content)**: Writes the specified content to the file at the specified path;
+- **is_directory(path)**: Checks if the path is a directory;
+- **list_files(path)**: Returns all the files in the specified directory;
+
 ## Errors
 
 ### Database
@@ -158,6 +223,10 @@ Objects:
 - **body()**: The request has no body;
 - **get_params()**: The route path has no parameter with the specified `id`;
 - **headers()**: The request has no headers;
+
+### FileSystem
+
+Each function can return a variety of errors related to issues with opening, reading, writing, or finding a file.
 
 ## Conclusion
 
