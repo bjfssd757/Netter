@@ -24,3 +24,5 @@ SERVER_STATE.json
 /logs_cli
 /netter_plugins_hub
 /netter_test
+/netter_core/build.rs
+/netter_core/src/utils
