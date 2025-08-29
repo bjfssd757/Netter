@@ -134,8 +134,8 @@ impl<'a> Evaluator<'a> {
             "==" => Ok((left_value == right_value).to_string()),
             "!=" => Ok((left_value != right_value).to_string()),
             "+" => {
-                let left_value = self.evaluate(left)?;
-                let right_value = self.evaluate(right)?;
+                // let left_value = self.evaluate(left)?;
+                // let right_value = self.evaluate(right)?;
 
                 if let (Ok(left_num), Ok(right_num)) = (left_value.parse::<f64>(), right_value.parse::<f64>()) {
                     let result = (left_num + right_num);
@@ -148,8 +148,8 @@ impl<'a> Evaluator<'a> {
                 }
             },
             "-" => {
-                let left_value = self.evaluate(left)?;
-                let right_value = self.evaluate(right)?;
+                // let left_value = self.evaluate(left)?;
+                // let right_value = self.evaluate(right)?;
 
                 let left_num = left_value.parse::<f64>()
                     .map_err(|_|
@@ -176,8 +176,8 @@ impl<'a> Evaluator<'a> {
                 Ok(result.to_string())
             },
             "*" => {
-                let left_value = self.evaluate(left)?;
-                let right_value = self.evaluate(right)?;
+                // let left_value = self.evaluate(left)?;
+                // let right_value = self.evaluate(right)?;
 
                 let left_num = left_value.parse::<f64>()
                     .map_err(|_|
@@ -204,8 +204,8 @@ impl<'a> Evaluator<'a> {
                 Ok(result.to_string())
             },
             "/" => {
-                let left_value = self.evaluate(left)?;
-                let right_value = self.evaluate(right)?;
+                // let left_value = self.evaluate(left)?;
+                // let right_value = self.evaluate(right)?;
 
                 let left_num = left_value.parse::<f64>()
                     .map_err(|_|
@@ -236,8 +236,8 @@ impl<'a> Evaluator<'a> {
                 Ok(result.to_string())
             },
             "^" => {
-                let left_value = self.evaluate(left)?;
-                let right_value = self.evaluate(right)?;
+                // let left_value = self.evaluate(left)?;
+                // let right_value = self.evaluate(right)?;
 
                 let left_num = left_value.parse::<f64>()
                     .map_err(|_|
@@ -265,13 +265,13 @@ impl<'a> Evaluator<'a> {
                 Ok(result.to_string())
             },
             "&&" => {
-                let left_value = self.evaluate(left)?;
+                // let left_value = self.evaluate(left)?;
 
                 if left_value == "false" || left_value == "0" || left_value == "" {
                     return Ok("false".to_string());
                 }
 
-                let right_value = self.evaluate(right)?;
+                // let right_value = self.evaluate(right)?;
 
                 Ok(if right_value != "false" && right_value != "0" && right_value != "" {
                     "true".to_string()
@@ -280,13 +280,13 @@ impl<'a> Evaluator<'a> {
                 })
             },
             "||" => {
-                let left_value = self.evaluate(left)?;
+                // let left_value = self.evaluate(left)?;
 
                 if left_value != "false" && left_value != "0" && left_value != "" {
                     return Ok("true".to_string());
                 }
 
-                let right_value = self.evaluate(right)?;
+                // let right_value = self.evaluate(right)?;
 
                 Ok(if right_value != "false" && right_value != "0" && right_value != "" {
                     "true".to_string()

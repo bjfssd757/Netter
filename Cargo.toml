@@ -11,7 +11,8 @@ members = [
     "netter_core",
     "netter_logger",
     "netter_plugger",
-    "netter_service"
+    "netter_service",
+    "netter_advanced_plugins"
 ]
 resolver = "2"
 
