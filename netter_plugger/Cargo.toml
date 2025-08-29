@@ -1,6 +1,6 @@
 [package]
 name = "netter_plugger"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 description = "Netter plugger is a crate for easy development plugins for netter RDL"
 license = "MIT"

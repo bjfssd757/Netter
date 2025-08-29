@@ -1415,7 +1415,7 @@ dependencies = [
 
 [[package]]
 name = "netter_plugger"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "ctor",
  "lazy_static",
