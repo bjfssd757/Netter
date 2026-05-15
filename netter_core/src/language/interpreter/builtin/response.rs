@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use crate::language::rdl_types::RDLTypes;
+use crate::{language::{interpreter::Object, rdl_types::RDLTypes}, runtime_error};
 
 #[derive(Debug, Clone)]
 pub struct Response {
@@ -7,6 +7,72 @@ pub struct Response {
     pub headers: HashMap<String, String>,
     pub body: Option<String>,
     pub is_sent: bool,
+}
+
+impl Object for Response {
+    fn name(&self) -> &'static str {
+        "Response"
+    }
+
+    fn methods(&self) -> Vec<&str> {
+        vec!["set_header", "body", "send", "status"]
+    }
+
+    fn call_method(&mut self, name: &str, args: Vec<RDLTypes>) -> crate::language::Result<RDLTypes> {
+        match name {
+            "set_header" => {
+                if args.len() < 2 {
+                    return runtime_error!("Method Response.set_header required 2 argument");
+                }
+
+                self.set_header(&args[0], &args[1]);
+                Ok(RDLTypes::Boolean(true))
+            }
+            "body" => {
+                if args.len() < 1 {
+                    return runtime_error!("Method Response.body required 1 argument");
+                }
+
+                self.body(args[0].to_string());
+                Ok(RDLTypes::Boolean(true))
+            }
+            "send" => {
+                self.send();
+                Ok(RDLTypes::Boolean(true))
+            }
+            "status" => {
+                if args.len() < 1 {
+                    return runtime_error!("Method Response.status required 1 argument");
+                }
+
+                let status: u16 = (&args[0]).into();
+
+                if !(100..=599).contains(&status) {
+                    return runtime_error!(format!("Incorrect status code: {}", status));
+                }
+
+                self.status(status);
+                Ok(RDLTypes::Boolean(true))
+            },
+            _ => runtime_error!(format!("Function with name '{}' not found in Response object", name))
+        }
+    }
+
+    fn get_property(&self, _name: &str) -> RDLTypes {
+        RDLTypes::Boolean(false)
+    }
+
+    fn method_exist(&self, name: &str) -> bool {
+        self.methods().contains(&name)
+    }
+
+    fn properties(&self) -> Vec<&str> {
+        vec![]
+    }
+
+    fn property_exist(&self, _name: &str) -> bool {
+        false
+    }
 }
 
 impl Response {

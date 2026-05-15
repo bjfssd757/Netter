@@ -2,8 +2,48 @@ use log::{trace};
 use crate::language::error::{Result};
 use crate::language::rdl_types::RDLTypes;
 use crate::runtime_error;
+use super::super::Object;
 
 pub struct Database {}
+
+impl Object for Database {
+    fn name(&self) -> &'static str {
+        "Database"
+    }
+
+    fn methods(&self) -> Vec<&str> {
+        vec!["get_all", "check", "get", "add"]
+    }
+
+    fn properties(&self) -> Vec<&str> {
+        Vec::new()
+    }
+
+    fn call_method(&mut self, name: &str, args: Vec<RDLTypes>) -> Result<RDLTypes> {
+        match name {
+            "get_all" => Ok(Database::get_all()?),
+            "check" => Ok(Database::check().unwrap_or(false).into()),
+            "get" => Ok(Database::get(&args[0])?),
+            "add" => {
+                Database::add(&args[0], &args[1], &args[2])?;
+                return Ok(RDLTypes::Boolean(true));
+            }
+            _ => runtime_error!(format!("Function with name '{}' not found in Database object", name))
+        }
+    }
+
+    fn get_property(&self, _name: &str) -> RDLTypes {
+        RDLTypes::Boolean(false)
+    }
+
+    fn method_exist(&self, name: &str) -> bool {
+        self.methods().contains(&name)
+    }
+
+    fn property_exist(&self, _name: &str) -> bool {
+        false
+    }
+}
 
 impl Database {
     pub fn get_all() -> Result<RDLTypes> {

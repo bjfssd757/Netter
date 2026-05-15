@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use serde::{Deserialize, Serialize};
 use crate::parser_error;
 use crate::language::Error;
@@ -8,6 +10,17 @@ pub enum RDLTypes {
     Number(i64),
     Vector(Vec<RDLTypes>),
     Boolean(bool),
+}
+
+impl From<RDLTypes> for u16 {
+    fn from(value: RDLTypes) -> Self {
+        match value {
+            RDLTypes::Boolean(b) => if b { 1 } else { 0 },
+            RDLTypes::Number(n) => n as u16,
+            RDLTypes::String(s) => s.parse::<u16>().unwrap_or(0),
+            RDLTypes::Vector(v) => v.into_iter().map(u16::from).sum(),
+        }
+    }
 }
 
 impl TryFrom<RDLTypes> for String {
@@ -54,18 +67,6 @@ impl TryFrom<RDLTypes> for bool {
             Ok(b)
         } else {
             parser_error!("Error with conversion! IN TryFrom<RDLTypes> for bool", line!() as usize, column!() as usize)
-        }
-    }
-}
-
-impl TryFrom<RDLTypes> for u16 {
-    type Error = Error;
-
-    fn try_from(value: RDLTypes) -> Result<Self, Error> {
-        if let RDLTypes::Number(n) = value {
-            Ok(n as u16)
-        } else {
-            parser_error!("Error with conversion! IN TryFrom<RDLTypes> for u16", line!() as usize, column!() as usize)
         }
     }
 }
@@ -118,6 +119,17 @@ impl From<u16> for RDLTypes {
     }
 }
 
+impl From<&RDLTypes> for u16 {
+    fn from(value: &RDLTypes) -> Self {
+        match value {
+            RDLTypes::Boolean(b) => if *b { 1 } else { 0 },
+            RDLTypes::Number(n) => *n as u16,
+            RDLTypes::String(s) => s.parse::<u16>().unwrap_or(0),
+            RDLTypes::Vector(v) => v.iter().map(u16::from).sum(), 
+        }
+    }
+}
+
 impl From<String> for RDLTypes {
     fn from(value: String) -> Self {
         RDLTypes::String(value)
@@ -139,6 +151,14 @@ impl From<i64> for RDLTypes {
 impl From<bool> for RDLTypes {
     fn from(value: bool) -> Self {
         RDLTypes::Boolean(value)
+    }
+}
+
+impl FromStr for RDLTypes {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(RDLTypes::String(s.to_string()))
     }
 }
 

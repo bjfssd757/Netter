@@ -6,10 +6,14 @@ pub mod builtin;
 
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::Arc;
+use std::sync::LazyLock;
+use std::sync::Mutex;
 use log::{debug, info, warn};
 use crate::language::ast::AstNode;
 use crate::language::error::Result;
 use crate::interpreter_error;
+use crate::language::rdl_types::RDLTypes;
 use crate::servers::TlsConfig;
 use executor::Executor;
 use route_handler::RouteHandler;
@@ -17,6 +21,50 @@ use builtin::plugin::PluginManager;
 use builtin::response::Response;
 use builtin::request::Request;
 use builtin::request::HttpBodyVariant;
+
+pub(crate) static OBJECT_REGISTRY: LazyLock<Mutex<ObjectRegister>> = LazyLock::new(|| Mutex::new(ObjectRegister::new()));
+
+pub trait Object: 'static + Send + Sync{
+    fn name(&self) -> &'static str;
+    fn methods(&self) -> Vec<&str>;
+    fn properties(&self) -> Vec<&str>;
+    fn method_exist(&self, name: &str) -> bool;
+    fn call_method(&mut self, name: &str, args: Vec<RDLTypes>) -> Result<RDLTypes>;
+    fn property_exist(&self, name: &str) -> bool;
+    fn get_property(&self, name: &str) -> RDLTypes;
+}
+
+pub struct ObjectRegister {
+    objects: Vec<Box<dyn Object>>,
+}
+
+impl ObjectRegister {
+    pub fn new() -> Self {
+        Self {
+            objects: Vec::new()
+        }
+    }
+
+    pub fn register(&mut self, object: impl Object + 'static) {
+        self.objects.push(Box::new(object));
+    }
+
+    pub fn objects(&self) -> &Vec<Box<dyn Object>> {
+        &self.objects
+    }
+
+    pub fn get_object(&self, name: &str) -> Option<&dyn Object> {
+        self.objects.iter()
+            .find(|obj| obj.name() == name)
+            .map(|obj| obj.as_ref())
+    }
+
+    pub fn get_object_mut(&mut self, name: &str) -> Option<&mut dyn Object> {
+        self.objects.iter_mut()
+            .find(|obj| obj.name() == name)
+            .map(|obj| obj.as_mut())
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct Configuration {

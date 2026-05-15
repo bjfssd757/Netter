@@ -152,17 +152,17 @@ impl fmt::Display for AstNode {
             AstNode::Program(statements) => {
                 writeln!(f, "Program:")?;
                 for (i, stmt) in statements.iter().enumerate() {
-                    write!(f, "  Маршрут {}: {}", i + 1, stmt)?;
+                    write!(f, "  Route {}: {}", i + 1, stmt)?;
                 }
                 Ok(())
             },
             AstNode::Route { path, method, body, on_error } => {
                 match on_error {
                     Some(e) => {
-                        writeln!(f, "Маршрут: {} {} {} {}", method, path, body, e)
+                        writeln!(f, "Route: {} {} {} {}", method, path, body, e)
                     },
                     None => {
-                        writeln!(f, "Маршрут: {} {} {}", method, path, body)
+                        writeln!(f, "Route: {} {} {}", method, path, body)
                     }
                 }
             },

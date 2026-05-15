@@ -377,7 +377,7 @@ impl Lexer {
                     }
                 },
 
-                _ => lexer_error!(format!("Неизвестный символ: '{}'", ch), line, column),
+                _ => lexer_error!(format!("Unexpected symbol: '{}'", ch), line, column),
             }
         } else {
             Ok(Token { token_type: TokenType::EOF, line, column })

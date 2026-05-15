@@ -2,9 +2,79 @@ use std::fs;
 use std::path::Path;
 use log::trace;
 use crate::language::error::{Result, Error, ErrorKind};
+use crate::language::interpreter::Object;
 use crate::language::rdl_types::RDLTypes;
+use crate::runtime_error;
 
 pub struct FileSystem {}
+
+impl Object for FileSystem {
+    fn name(&self) -> &'static str {
+        "FileSystem"
+    }
+
+    fn methods(&self) -> Vec<&str> {
+        vec!["exists", "read_text", "write_text", "is_directory", "list_files"]
+    }
+
+    fn call_method(&mut self, name: &str, args: Vec<RDLTypes>) -> Result<RDLTypes> {
+        match name {
+            "exists" => {
+                if args.len() < 1 {
+                    return runtime_error!(format!("Method FileSystem.exists required 1 argument"));
+                }
+
+                FileSystem::exists(&args[0]).map(|v| v.into())
+            }
+            "read_text" => {
+                if args.len() < 1 {
+                    return runtime_error!(format!("Method FileSystem.read_text required 1 argument"));
+                }
+
+                FileSystem::read_text(&args[0])
+            }
+            "write_text" => {
+                if args.len() < 2 {
+                    return runtime_error!(format!("Method FileSystem.write_text required 2 argument"));
+                }
+
+                FileSystem::write_text(&args[0], &args[1])?;
+                Ok(RDLTypes::Boolean(true))
+            }
+            "is_directory" => {
+                if args.len() < 1 {
+                    return runtime_error!(format!("Method FileSystem.is_directory required 1 argument"));
+                }
+
+                FileSystem::is_directory(&args[0]).map(|v| v.into())
+            }
+            "list_files" => {
+                if args.len() < 1 {
+                    return runtime_error!(format!("Method FileSystem.list_files required 1 argument"));
+                }
+
+                FileSystem::list_files(&args[0])
+            },
+            _ => runtime_error!(format!("Function with name '{}' not found in FileSystem object", name))
+        }
+    }
+
+    fn get_property(&self, _name: &str) -> RDLTypes {
+        RDLTypes::Boolean(false)
+    }
+
+    fn method_exist(&self, name: &str) -> bool {
+        self.methods().contains(&name)
+    }
+
+    fn properties(&self) -> Vec<&str> {
+        vec![]
+    }
+
+    fn property_exist(&self, _name: &str) -> bool {
+        false
+    }
+}
 
 impl FileSystem {
     pub fn exists(path: &RDLTypes) -> Result<bool> {

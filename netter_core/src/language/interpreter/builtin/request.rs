@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use base64::Engine;
-use crate::language::rdl_types::RDLTypes;
+use crate::{language::{interpreter::Object, rdl_types::RDLTypes}, runtime_error};
 
 #[derive(Debug, Clone)]
 pub enum HttpBodyVariant {
@@ -14,6 +14,58 @@ pub struct Request {
     pub params: HashMap<String, String>,
     pub headers: HashMap<String, String>,
     pub body: HttpBodyVariant,
+}
+
+impl Object for Request {
+    fn name(&self) -> &'static str {
+        "Request"
+    }
+
+    fn methods(&self) -> Vec<&str> {
+        vec![
+            "get_param", "get_header", 
+            "body", "text_body", "body_base64", "is_binary"
+        ]
+    }
+
+    fn call_method(&mut self, name: &str, args: Vec<RDLTypes>) -> crate::language::Result<RDLTypes> {
+        match name {
+            "get_param" => {
+                if args.len() < 1 {
+                    return runtime_error!(format!("Method Request.get_param required 1 argument"));
+                }
+
+                Ok(self.get_param(&args[0]))
+            }
+            "get_header" => {
+                if args.len() < 1 {
+                    return runtime_error!(format!("Method Request.get_header required 1 argument"));
+                }
+
+                Ok(self.get_header(&args[0]))
+            }
+            "body" | "text_body" => Ok(self.get_body()),
+            "body_base64" => Ok(self.get_body_as_base64()),
+            "is_binary" => Ok(self.is_body_binary().into()),
+            _ => runtime_error!(format!("Function with name '{}' not found in Request object", name))
+        }
+    }
+
+    fn get_property(&self, _name: &str) -> RDLTypes {
+        RDLTypes::Boolean(false)
+    }
+
+    fn method_exist(&self, name: &str) -> bool {
+        self.methods().contains(&name)
+    }
+
+    fn properties(&self) -> Vec<&str> {
+        Vec::new()
+    }
+
+    fn property_exist(&self, _name: &str) -> bool {
+        false
+    }
 }
 
 impl Request {

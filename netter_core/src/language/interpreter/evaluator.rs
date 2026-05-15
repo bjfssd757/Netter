@@ -1,6 +1,7 @@
 use log::{trace, debug, error, info};
 use crate::language::ast::AstNode;
 use crate::language::error::{Result, Error, ErrorKind};
+use crate::language::interpreter::OBJECT_REGISTRY;
 use crate::language::interpreter::builtin::filesystem::FileSystem;
 use crate::language::rdl_types::RDLTypes;
 use crate::runtime_error;
@@ -122,7 +123,7 @@ impl<'a> Evaluator<'a> {
         match name.to_string().as_str() {
             "Request" | "Response" | "Database" | "FileSystem" => Ok(name.to_string().into()),
             _ if self.plugin_manager.has_plugin(name.to_string().as_str()) => Ok(name.to_string().into()),
-            _ => runtime_error!(format!("Переменная или объект '{}' не найден", name)),
+            _ => runtime_error!(format!("Variable or object '{}' not found", name)),
         }
     }
 
@@ -130,7 +131,7 @@ impl<'a> Evaluator<'a> {
         let left_value = self.evaluate(left)?;
         let right_value = self.evaluate(right)?;
 
-        trace!("Бинарная операция: '{}' {} '{}'", left_value, operator, right_value);
+        trace!("Binary operation: '{}' {} '{}'", left_value, operator, right_value);
 
         match operator {
             "==" => Ok(RDLTypes::String((left_value == right_value).to_string())),
@@ -138,9 +139,6 @@ impl<'a> Evaluator<'a> {
             "+" => {
                 if let (Ok(left_num), Ok(right_num)) = (left_value.clone().try_into() as Result<i64>, right_value.clone().try_into() as Result<i64>) {
                     let result = left_num + right_num;
-                    // if result.is_nan() || result.is_infinite() {
-                    //     panic!("Arithmetic overflow or invalid operation")
-                    // }
                     Ok(RDLTypes::Number(result))
                 } else {
                     Ok(RDLTypes::String(format!("{}{}", left_value, right_value)))
@@ -153,7 +151,7 @@ impl<'a> Evaluator<'a> {
                             kind: ErrorKind::Runtime,
                             line: None,
                             column: None,
-                            message: format!("Невозможно преобразовать '{}' в число для вычитания", left_value),
+                            message: format!("Can't convert '{}' into a number for subtraction", left_value),
                         }.into()
                     )?;
                 let right_num: i64 = right_value.clone().try_into()
@@ -162,13 +160,10 @@ impl<'a> Evaluator<'a> {
                             kind: ErrorKind::Runtime,
                             line: None,
                             column: None,
-                            message: format!("Невозможно преобразовать '{}' в число для вычитания", right_value),
+                            message: format!("Can't convert '{}' into a number for subtraction", right_value),
                         }.into()
                     )?;
                 let result = left_num - right_num;
-                // if result.is_nan() || result.is_infinite() {
-                //     panic!("Arithmetic overflow or invalid operation")
-                // }
                 Ok(RDLTypes::Number(result))
             },
             "*" => {
@@ -178,7 +173,7 @@ impl<'a> Evaluator<'a> {
                             kind: ErrorKind::Runtime,
                             line: None,
                             column: None,
-                            message: format!("Невозможно преобразовать '{}' в число для умножения", left_value)
+                            message: format!("Can't convert '{}' into a number for multiplication", left_value)
                         }.into()
                     )?;
                 let right_num: i64 = right_value.clone().try_into()
@@ -187,13 +182,10 @@ impl<'a> Evaluator<'a> {
                             kind: ErrorKind::Runtime,
                             line: None,
                             column: None,
-                            message: format!("Невозможно преобразовать '{}' в число для умножения", right_value)
+                            message: format!("Can't convert '{}' into a number for multiplication", right_value)
                         }.into()
                     )?;
                 let result = left_num * right_num;
-                // if result.is_nan() || result.is_infinite() {
-                //     panic!("Arithmetic overflow or invalid operation")
-                // }
                 Ok(RDLTypes::Number(result))
             },
             "/" => {
@@ -203,7 +195,7 @@ impl<'a> Evaluator<'a> {
                             kind: ErrorKind::Runtime,
                             line: None,
                             column: None,
-                            message: format!("Невозможно преобразовать '{}' в число для деления", left_value)
+                            message: format!("Can't convert '{}' into a number for division", left_value)
                         }.into()
                     )?;
                 let right_num: i64 = right_value.clone().try_into()
@@ -212,16 +204,13 @@ impl<'a> Evaluator<'a> {
                             kind: ErrorKind::Runtime,
                             line: None,
                             column: None,
-                            message: format!("Невозможно преобразовать '{}' в число для деления", right_value)
+                            message: format!("Can't convert '{}' into a number for division", right_value)
                         }.into()
                     )?;
                 if right_num == 0 {
-                    return runtime_error!("Деление на ноль".to_string());
+                    return runtime_error!("Division by zero".to_string());
                 }
                 let result = left_num / right_num;
-                // if result.is_nan() || result.is_infinite() {
-                //     panic!("Arithmetic overflow or invalid operation")
-                // }
 
                 Ok(RDLTypes::Number(result))
             },
@@ -232,7 +221,7 @@ impl<'a> Evaluator<'a> {
                             kind: ErrorKind::Runtime,
                             line: None,
                             column: None,
-                            message: format!("Невозможно преобразовать '{}' в число для возведения в степень", left_value)
+                            message: format!("Can't convert '{}' into a number for raising to a power", left_value)
                         }.into()
                     )?;
                 let right_num: i64 = right_value.clone().try_into()
@@ -241,27 +230,21 @@ impl<'a> Evaluator<'a> {
                             kind: ErrorKind::Runtime,
                             line: None,
                             column: None,
-                            message: format!("Невозможно преобразовать '{}' в число для возведения в степень", right_value)
+                            message: format!("Can't convert '{}' into a number for raising to a power", right_value)
                         }.into()
                     )?;
                 if right_num < 0 {
 
                 }
                 let result = crate::utils::powi(left_num, right_num);
-                // if result.is_nan() || result.is_infinite() {
-                //     panic!("Arithmetic overflow or invalid operation")
-                // }
 
                 Ok(RDLTypes::Number(result))
             },
             "&&" => {
-                // let left_value = self.evaluate(left)?;
 
                 if left_value == false.into() {
                     return Ok(RDLTypes::Boolean(false));
                 }
-
-                // let right_value = self.evaluate(right)?;
 
                 Ok(if right_value != false.into() {
                     RDLTypes::Boolean(true)
@@ -280,13 +263,13 @@ impl<'a> Evaluator<'a> {
                     RDLTypes::Boolean(false)
                 })
             },
-            _ => runtime_error!(format!("Неподдерживаемый бинарный оператор: {}", operator)),
+            _ => runtime_error!(format!("Not supported binary operator: {}", operator)),
         }
     }
 
     fn evaluate_property_access(&mut self, object: &Box<AstNode>, property: &str) -> Result<RDLTypes> {
         let obj_value = self.evaluate(object)?;
-        runtime_error!(format!("Доступ к свойству '{}.{}' не реализован", obj_value, property))
+        runtime_error!(format!("Property access '{}.{}' not implemented", obj_value, property))
     }
 
     fn evaluate_function_call(
@@ -308,7 +291,7 @@ impl<'a> Evaluator<'a> {
                 _ => {
                     let obj_value = self.evaluate(obj)?;
                     return runtime_error!(format!(
-                        "Вызов методов у не-идентификаторов ('{}') не поддерживается",
+                        "Calling a method on a non-identifier ('{}') is not supported",
                         obj_value
                     ));
                 }
@@ -317,16 +300,27 @@ impl<'a> Evaluator<'a> {
             None
         };
 
+        let obj_names = self.get_objects_names()?;
+
         let result = match object_name.as_deref() {
-            Some("Database") => self.call_database_method(name, &evaluated_args),
-            Some("Response") => self.call_response_method(name, &evaluated_args),
-            Some("Request") => self.call_request_method(name, &evaluated_args),
-            Some("FileSystem") => self.call_filesystem_method(name, &evaluated_args),
+            Some(n) if obj_names.contains(&n) => {
+                let mut lock = if let Ok(l) = OBJECT_REGISTRY.lock() {
+                    l
+                } else {
+                    return runtime_error!("OBJECT_REGISTRY mutex is poisoned!");
+                };
+
+                if let Some(object) = lock.get_object_mut(name) {
+                    object.call_method(name, evaluated_args)
+                } else {
+                    runtime_error!(format!("Object '{}' not found", n))
+                }
+            }
             Some(plugin_name) if self.plugin_manager.has_plugin(plugin_name) => {
                 self.plugin_manager.call_plugin_function(plugin_name, name, &evaluated_args)
             },
             None => self.call_global_function(name, &evaluated_args),
-            Some(unknown) => runtime_error!(format!("Объект '{}' не найден", unknown)),
+            Some(unknown) => runtime_error!(format!("Object '{}' not found", unknown)),
         };
 
         match result {
@@ -335,8 +329,8 @@ impl<'a> Evaluator<'a> {
                 if try_operator {
                     Err(err)
                 } else if unwrap_operator {
-                    error!("Оператор '!!' вызвал панику: {}", err);
-                    panic!("Ошибка выполнения (unwrap !!): {}", err);
+                    error!("Operator '!!' caused panic: {}", err);
+                    panic!("Execution error (unwrap !!): {}", err);
                 } else {
                     Err(err)
                 }
@@ -344,148 +338,16 @@ impl<'a> Evaluator<'a> {
         }
     }
 
-    fn call_filesystem_method(&self, method: &str, args: &[RDLTypes]) -> Result<RDLTypes> {
-        match method {
-            "exists" => {
-                if args.len() == 1 {
-                    FileSystem::exists(&args[0]).map(|v| v.into())
-                } else {
-                    runtime_error!("Метод FileSystem.exists требует 1 аргумент")
-                }
-            },
-            "read_text" => {
-                if args.len() == 1 {
-                    FileSystem::read_text(&args[0])
-                } else {
-                    runtime_error!("Метод FileSystem.read_text требует 1 аргумент")
-                }
-            },
-            "write_text" => {
-                if args.len() == 2 {
-                    FileSystem::write_text(&args[0], &args[1]).map(|_| "OK".into())
-                } else {
-                    runtime_error!("Метод FileSystem.write_text требует 2 аргумента")
-                }
-            },
-            "is_directory" => {
-                if args.len() == 1 {
-                    FileSystem::is_directory(&args[0]).map(|v| v.into())
-                } else {
-                    runtime_error!("Метод FileSystem.is_directory требует 1 аргумент")
-                }
-            },
-            "list_files" => {
-                if args.len() == 1 {
-                    FileSystem::list_files(&args[0])
-                } else {
-                    runtime_error!("Метод FileSystem.list_files требует 1 аргумент")
-                }
-            },
-            _ => runtime_error!(format!("Метод не найден: FileSystem.{}", method)),
-        }
-    }
-
-    fn call_database_method(&self, method: &str, args: &[RDLTypes]) -> Result<RDLTypes> {
-        match method {
-            "get_all" => Database::get_all(),
-            "check" => Database::check().map(|v| v.into()),
-            "get" => {
-                if args.len() == 1 {
-                    Database::get(&args[0])
-                } else {
-                    runtime_error!("Метод Database.get требует 1 аргумент")
-                }
-            },
-            "add" => {
-                if args.len() >= 3 {
-                    Database::add(&args[0], &args[1], &args[2]).map(|_| "OK".into())
-                } else {
-                    runtime_error!("Метод Database.add требует 3 аргумента")
-                }
-            },
-            _ => runtime_error!(format!("Метод не найден: Database.{}", method)),
-        }
-    }
-
-    fn call_response_method(&mut self, method: &str, args: &[RDLTypes]) -> Result<RDLTypes> {
-        match method {
-            "body" => {
-                if args.len() == 1 {
-                    self.response.body((&args[0]).to_string());
-                    debug!("body in call_response_methods.body():\n{:?}\n", self.response.body.clone());
-                    Ok(args[0].clone())
-                } else {
-                    runtime_error!("Метод Response.body требует 1 аргумент")
-                }
-            },
-            "send" => {
-                debug!("Enter in Response.send() method in call_response_method()\n{:?}\n", self.response.clone());
-                self.response.send();
-                Ok("".into())
-            },
-            "status" => {
-                if args.len() == 1 {
-                    let status_code = args[0].clone().try_into();
-                    if let Ok(code) = status_code {
-                        self.response.status(code);
-                        Ok(code.into())
-                    } else {
-                        runtime_error!(format!("Неверный статус код: {}", args[0]))
-                    }
-                } else {
-                    runtime_error!("Метод Response.status требует 1 аргумент")
-                }
-            },
-            "headers" | "set_header" => {
-                if args.len() == 2 {
-                    self.response.set_header(&args[0], &args[1]);
-                    Ok(format!("{}: {}", args[0], args[1]).into())
-                } else {
-                    runtime_error!("Метод Response.headers требует 2 аргумента")
-                }
-            },
-            _ => runtime_error!(format!("Метод не найден: Response.{}", method)),
-        }
-    }
-
-    fn call_request_method(&self, method: &str, args: &[RDLTypes]) -> Result<RDLTypes> {
-        match method {
-            "get_params" | "get_param" => {
-                if args.len() == 1 {
-                    Ok(self.request.get_param(&args[0]))
-                } else {
-                    runtime_error!("Метод Request.get_params требует 1 аргумент")
-                }
-            },
-            "get_header" => {
-                if args.len() == 1 {
-                    Ok(self.request.get_header(&args[0]))
-                } else {
-                    runtime_error!("Метод Request.get_header требует 1 аргумент")
-                }
-            },
-            "body" | "text_body" => {
-                if args.is_empty() {
-                    Ok(self.request.get_body())
-                } else {
-                    runtime_error!(format!("Метод Request.{} не принимает аргументы", method))
-                }
-            },
-            "body_base64" => {
-                if args.is_empty() {
-                    Ok(self.request.get_body_as_base64())
-                } else {
-                    runtime_error!("Метод Request.body_base64 не принимает аргументы")
-                }
-            },
-            "is_binary" => {
-                if args.is_empty() {
-                    Ok(self.request.is_body_binary().into())
-                } else {
-                    runtime_error!("Метод Request.is_binary не принимает аргументов")
-                }
-            },
-            _ => runtime_error!(format!("Метод не найден: Request.{}", method)),
+    fn get_objects_names(&self) -> Result<Vec<&'static str>> {
+        if let Ok(lock) = OBJECT_REGISTRY.lock() {
+            let mut names = Vec::new();
+            for obj in lock.objects() {
+                let name: &'static str = obj.name();
+                names.push(name);
+            }
+            Ok(names)
+        } else {
+            return runtime_error!("OBJECT_REGISTRY mutex is poisoned!");
         }
     }
 
