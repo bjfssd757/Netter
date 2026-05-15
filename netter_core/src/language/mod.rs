@@ -4,6 +4,7 @@ pub mod lexer;
 pub mod parser;
 pub mod error;
 pub mod interpreter;
+pub mod rdl_types;
 
 pub use error::{Error, Result};
 pub use ast::AstNode;

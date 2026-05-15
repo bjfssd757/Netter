@@ -1,63 +1,39 @@
-use http_body_util::{combinators::BoxBody, BodyExt, Empty, Full};
-use hyper::{
-    body::{self, Bytes},
-    header::{HeaderName, HeaderValue, CONTENT_TYPE},
-    Request,
-    Response,
-    StatusCode,
-};
-use log::{debug, error, info, trace, warn};
-use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, convert::Infallible, fs::File, io::BufReader, str::FromStr, sync::{Arc, Mutex}};
-use derive_more::Debug;
+use std::{collections::HashMap, net::SocketAddr, sync::{Arc, Mutex}, time::Duration};
+use axum::{Router, body::Body, extract::{Request, State}, response::IntoResponse, routing::any};
+use axum_server::Handle;
+use http_body_util::BodyExt;
+use hyper::{HeaderMap, StatusCode, header::CONTENT_LENGTH};
+use log::{error, warn, info};
 use rustls::ServerConfig;
-use rustls_pemfile::{certs, pkcs8_private_keys};
-use hyper::service::service_fn;
-use hyper_util::{
-    rt::{TokioExecutor, TokioIo},
-    server::conn::auto::Builder as HyperAutoBuilder,
-};
-use tokio_rustls::TlsAcceptor;
-use tokio::net::TcpListener;
-use crate::{
-    language::interpreter::Interpreter,
-    CoreError,
-};
-use std::net::SocketAddr;
-use std::time::Duration;
+use tokio::sync::mpsc;
+use derive_more::Debug;
+use super::TlsConfig;
+use crate::{CoreError, language::{Interpreter, interpreter::builtin::request::HttpBodyVariant}, servers::{Server, load_rustls_config}};
+
+#[derive(Debug, Clone, Copy)]
+pub enum ServerCommand {
+    Restart,
+    Stop,
+}
 
 #[derive(Debug, Clone)] 
-pub struct Server {
+pub struct HttpServer {
     #[debug(skip)] 
     pub interpreter: Option<Arc<Mutex<Interpreter>>>,
     pub tls_config: Option<TlsConfig>, 
     pub rustls_config: Option<Arc<ServerConfig>>, 
+    pub server_id: String,
+    addr: Option<SocketAddr>,
+    server_handle: Option<Handle<SocketAddr>>,
+    control_tx: Option<mpsc::Sender<ServerCommand>>,
+    boot_time: Option<std::time::Instant>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TlsConfig {
-    pub enabled: bool,
-    pub cert_path: String,
-    pub key_path: String,
-}
-
-#[derive(Debug, Clone)]
-pub enum HttpBodyVariant {
-    Text(String),
-    Bytes(Vec<u8>),
-    Empty,
-}
-
-impl Default for HttpBodyVariant {
-    fn default() -> Self {
-        HttpBodyVariant::Empty
-    }
-}
-
-impl Server {
+impl HttpServer {
     pub fn from_interpreter(
         interpreter: Interpreter,
-        tls_config: Option<TlsConfig>, 
+        tls_config: Option<TlsConfig>,
+        server_id: String,
     ) -> Self {
         let rustls_config_result = if let Some(tls) = &tls_config {
             if tls.enabled {
@@ -81,10 +57,15 @@ impl Server {
             None 
         };
 
-        Server {
+        Self {
             interpreter: Some(Arc::new(Mutex::new(interpreter))),
             tls_config,
             rustls_config: rustls_config_result,
+            server_id,
+            addr: None,
+            control_tx: None,
+            server_handle: None,
+            boot_time: None,
         }
     }
 
@@ -109,359 +90,305 @@ impl Server {
         }
         self.rustls_config = None;
     }
+
     pub fn is_tls_enabled(&self) -> bool {
         self.tls_config.as_ref().map_or(false, |c| c.enabled) && self.rustls_config.is_some()
     }
 }
 
-fn load_rustls_config(cert_path: &str, key_path: &str) -> Result<ServerConfig, CoreError> {
-    debug!("Loading cert file from: {}", cert_path);
-    let cert_file = File::open(cert_path)
-        .map_err(|e| CoreError::IoError(format!("Failed to open cert file '{}': {}", cert_path, e)))?;
-    let mut cert_reader = BufReader::new(cert_file);
-
-    let cert_chain = certs(&mut cert_reader)
-        .collect::<Result<Vec<_>, _>>() 
-        .map_err(|e| CoreError::IoError(format!("Failed to read certificates from '{}': {}", cert_path, e)))?;
-
-    if cert_chain.is_empty() {
-         error!("No valid certificates found in file: {}", cert_path);
-        return Err(CoreError::ConfigParseError(format!("No certificates found in '{}'", cert_path)));
-    }
-    debug!("Found {} certificate(s) in {}", cert_chain.len(), cert_path);
-
-    debug!("Loading private key file from: {}", key_path);
-    let key_file = File::open(key_path)
-        .map_err(|e| CoreError::IoError(format!("Failed to open key file '{}': {}", key_path, e)))?;
-    let mut key_reader = BufReader::new(key_file);
-    let private_key = pkcs8_private_keys(&mut key_reader)
-        .next() 
-        .ok_or_else(|| CoreError::ConfigParseError(format!("No PKCS8 private keys found in '{}'", key_path)))? 
-        .map_err(|e| CoreError::IoError(format!("Failed to read private key from '{}': {}", key_path, e)))?; 
-
-    debug!("Private key loaded successfully from {}", key_path);
-    
-    let config = ServerConfig::builder()
-        .with_no_client_auth() 
-        .with_single_cert(cert_chain, private_key.into()) 
-        .map_err(|e| CoreError::ConfigParseError(format!("Failed to build rustls ServerConfig: {}", e)))?;
-
-    Ok(config)
-}
-
-pub async fn handle_http_request(
-    req: Request<body::Incoming>,
-    server_state: Arc<Server>, 
-) -> Result<Response<BoxBody<Bytes, hyper::Error>>, Infallible> { 
-    let method = req.method().clone();
-    let path = req.uri().path().to_string();
-    let hyper_headers = req.headers().clone();
-    let start_time = std::time::Instant::now(); 
-
-    trace!("[Req: {} {}] Handling request.", method, path);
-
-    let query_params: HashMap<String, String> = req.uri().query()
-        .map(|v| url::form_urlencoded::parse(v.as_bytes()).into_owned().collect())
-        .unwrap_or_else(HashMap::new);
-    trace!("[Req: {} {}] Query params: {:?}", method, path, query_params);
-
-    let body_bytes_result = req.into_body().collect().await; 
-
-    let interpretable_body: HttpBodyVariant = match body_bytes_result {
-        Ok(collected_body) => {
-            let actual_body_bytes = collected_body.to_bytes();
-            if actual_body_bytes.is_empty() {
-                HttpBodyVariant::Empty
-            } else {
-                let content_type_header = hyper_headers.get(CONTENT_TYPE);
-                let is_likely_file_upload = content_type_header
-                    .and_then(|val| val.to_str().ok())
-                    .map_or(false, |ct| {
-                        ct.starts_with("multipart/form-data") ||
-                        ct.starts_with("application/octet-stream")
-                    });
-
-                if is_likely_file_upload {
-                    trace!("[Req: {} {}] Detected file upload (Content-Type: {:?}). Transfering raw bytes...", method, path, content_type_header.map(|h|h.to_str()));
-                    HttpBodyVariant::Bytes(actual_body_bytes.to_vec())
-                } else {
-                    match String::from_utf8(actual_body_bytes.to_vec()) {
-                        Ok(s) => {
-                            trace!("[Req: {} {}] Тело (UTF-8 текст): {}", method, path, s);
-                            HttpBodyVariant::Text(s)
-                        },
-                        Err(e) => {
-                            warn!("[Req: {} {}] Failed to decode body as UTF-8 (Content-Type: {:?}): {}. Transfering raw bytes...",
-                                method,
-                                path,
-                                content_type_header.map(|h|h.to_str()), e);
-                            HttpBodyVariant::Bytes(actual_body_bytes.to_vec())
-                        }
-                    }
-                }
-            }
-        },
-        Err(e) => {
-            error!("[Req: {} {}] Failed to collect request body: {}", method, path, e);
-            let mut response = hyper::Response::new(full("Failed while reading request body."));
-            *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-            return Ok(response);
-        }
-    };
-
-    let mut header_map = HashMap::new();
-    for (key, value) in &hyper_headers {
-        match value.to_str() {
-            Ok(value_string) => {
-                header_map.insert(key.as_str().to_string(), value_string.to_string());
-            },
+impl Server for HttpServer {
+    /// Start HTTP server on given address
+    /// 
+    /// # Example
+    /// 
+    /// ```rust
+    /// let mut server = HttpServer::from_interpreter(interpreter, None, "1234".to_string());
+    /// server.start("127.0.0.1:9090").await;
+    /// ```
+    async fn start(&mut self, socket_addr_str: String) {
+        let addr = match socket_addr_str.parse::<SocketAddr>() {
+            Ok(a) => a,
             Err(_) => {
-                warn!("[Req: {} {}] Header '{}' contains non-UTF8 value, skipping.", method, path, key.as_str());
+                error!("[HTTP Server ID: {}] Can't parse socket_addr_str to std::net::SocketAddr!", self.server_id);
+                return;
+            }
+        };
+        self.addr = Some(addr);
+
+        let (tx, mut rx) = mpsc::channel::<ServerCommand>(1);
+        self.control_tx = Some(tx);
+
+        loop {
+            info!("[HTTP Server ID: {}] Starting server instance...", self.server_id);
+
+            self.boot_time = Some(std::time::Instant::now());
+
+            let handle = Handle::new();
+            self.server_handle = Some(handle.clone());
+
+            let app = Router::new()
+                .fallback(any(handle_request))
+                .with_state(self.interpreter.clone());
+
+            let make_service = app.into_make_service();
+
+            let server_handle_clone = handle.clone();
+            let is_tls = self.is_tls_enabled();
+            let rustls_config = self.rustls_config.clone();
+            let server_id = self.server_id.clone();
+
+            let server_task = tokio::spawn(async move {
+                if is_tls {
+                    let raw_cfg = match rustls_config {
+                        Some(cfg) => cfg,
+                        None => {
+                            let err_msg = format!("[HTTP Server ID: {}] TLS is enabled, but tls_config is None!", server_id);
+                            error!("{}", err_msg);
+                            return Err(std::io::Error::new(
+                                std::io::ErrorKind::Other, err_msg
+                            ))
+                        }
+                    };
+                    let config = axum_server::tls_rustls::RustlsConfig::from_config(raw_cfg);
+                    axum_server::bind_rustls(addr, config)
+                        .handle(server_handle_clone)
+                        .serve(make_service)
+                        .await
+                } else {
+                    axum_server::bind(addr)
+                        .handle(server_handle_clone)
+                        .serve(make_service)
+                        .await
+                }
+            });
+
+            let mut next_action = ServerCommand::Restart;
+
+            let mut task_opt = Some(server_task);
+
+            tokio::select! {
+                maybe_command = rx.recv() => {
+                    if let Some(command) = maybe_command {
+                        next_action = command;
+                        info!("[HTTP Server ID: {}] Control command received: {:?}", self.server_id, command);
+                        handle.graceful_shutdown(Some(Duration::from_secs(5)));
+                        
+                        if let Some(task) = task_opt.take() {
+                            let _ = task.await;
+                        }
+                    }
+                }
+                server_result = async {
+                    if let Some(ref mut task) = task_opt {
+                        task.await
+                    } else {
+                        std::future::pending().await
+                    }
+                } => {
+                    task_opt.take();
+                    
+                    match server_result {
+                        Ok(Err(e)) => error!("[HTTP Server ID: {}] Server stopped with error: {}", self.server_id, e),
+                        Err(panic_err) => error!("[HTTP Server ID: {}] Server task panicked: {:?}", self.server_id, panic_err),
+                        _ => info!("[HTTP Server ID: {}] Server instance stopped gracefully.", self.server_id),
+                    }
+                    next_action = ServerCommand::Restart;
+                }
+            }
+
+            match next_action {
+                ServerCommand::Restart => {
+                    info!("[HTTP Server ID: {}] Server restart triggered. Restarting...", self.server_id);
+                    tokio::time::sleep(Duration::from_millis(250)).await
+                }
+                ServerCommand::Stop => {
+                    info!("[HTTP Server ID: {}] Server stop triggered. Stopping...", self.server_id);
+                    
+                    self.server_handle = None;
+                    self.control_tx = None;
+                    self.boot_time = None;
+                    break;
+                }
             }
         }
     }
-    trace!("[Req: {} {}] Headers: {:?}", method, path, header_map);
 
-    let response_result: Result<Response<BoxBody<Bytes, hyper::Error>>, Infallible> = {
-        if let Some(interpreter_arc) = &server_state.interpreter {
-            let interpreter_guard = match interpreter_arc.lock() {
-                 Ok(guard) => guard,
-                 Err(poisoned) => {
-                     error!("[Req: {} {}] Interpreter mutex is poisoned! {}", method, path, poisoned);
-                     let mut response = hyper::Response::new(full("Internal Server Error (Mutex Poisoned)"));
-                     *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-                     return Ok(response); 
-                 }
-            };
-            trace!("[Req: {} {}] Interpreter locked.", method, path);
+    /// Restart server if it running.
+    /// 
+    /// # Example
+    /// 
+    /// ```rust
+    /// let mut server = HttpServer::from_interpreter(interpreter, None, "1234".to_string());
+    /// server.start("127.0.0.1:9090");
+    /// 
+    /// tokio::time::sleep(Duration::from_secs(5));
+    /// 
+    /// server.restart();
+    /// ```
+    async fn restart(&mut self) {
+        info!("[HTTP Server ID: {}] Initializing restart...", self.server_id);
 
-            let body = match interpretable_body {
-                HttpBodyVariant::Bytes(bytes) => {
-                    crate::language::interpreter::builtin::request::HttpBodyVariant::Bytes(bytes)
-                },
-                HttpBodyVariant::Text(text) => {
-                    crate::language::interpreter::builtin::request::HttpBodyVariant::Text(text)
-                },
-                HttpBodyVariant::Empty => {
-                    crate::language::interpreter::builtin::request::HttpBodyVariant::Empty
-                },
-            };
-            let response_obj = Interpreter::handle_request(
-                &interpreter_guard,
-                method.as_str(),
-                &path,
-                query_params,
-                header_map,
-                body,
+        if let Some(tx) = &self.control_tx {
+            if let Err(e) = tx.send(ServerCommand::Restart).await {
+                error!(
+                    "[HTTP Server ID: {}] Failed to send restart signal to server loop {:?}",
+                    self.server_id,
+                    e
+                )
+            }
+        } else {
+            warn!(
+                "[HTTP Server ID: {}] Server is not running or channel not initialized",
+                self.server_id
             );
-            trace!("[Req: {} {}] Interpreter response object: {:?}", method, path, response_obj);
-            let mut response = Response::new(full(response_obj.body.unwrap_or_default())); 
+        }
+    }
 
-            *response.status_mut() = StatusCode::from_u16(response_obj.status)
-                .unwrap_or_else(|_| {
-                    warn!("[Req: {} {}] Invalid status code from interpreter: {}", method, path, response_obj.status);
-                    StatusCode::INTERNAL_SERVER_ERROR 
-                });
-            
-            for (key, value) in &response_obj.headers {
-                match HeaderName::from_str(key) {
-                    Ok(header_name) => {
-                        match HeaderValue::from_str(value) {
-                            Ok(header_value) => {
-                                response.headers_mut().insert(header_name, header_value);
-                            },
-                            Err(_) => {
-                                warn!("[Req: {} {}] Invalid header value for key '{}': {}", method, path, key, value);
-                            }
-                        }
-                    },
-                    Err(_) => {
-                         warn!("[Req: {} {}] Invalid header name: {}", method, path, key);
-                    }
+    /// Shutdown server if it running.
+    /// 
+    /// # Example
+    /// 
+    /// ```rust
+    /// let mut server = HttpServer::from_interpreter(interpreter, None, "1234".to_string());
+    /// server.start("127.0.0.1:9090");
+    /// 
+    /// tokio::time::sleep(Duration::from_secs(5));
+    /// 
+    /// server.shutdown();
+    /// ```
+    async fn shutdown(&mut self) {
+        info!("[HTTP Server ID: {}] Initializing shutdown...", self.server_id);
+
+        if let Some(tx) = &self.control_tx {
+            if let Err(e) = tx.send(ServerCommand::Stop).await {
+                error!(
+                    "[HTTP Server ID: {}] Failed to send stop signal to server loop {:?}",
+                    self.server_id,
+                    e
+                )
+            }
+        } else {
+            warn!(
+                "[HTTP Server ID: {}] Server is not running or channel not initialized",
+                self.server_id
+            );
+        }
+    }
+
+    /// Return statistics of server.
+    /// 
+    /// If server is not running, `uptime` parameter is zero (0)
+    async fn stats(&self) -> super::ServerStats {
+        super::ServerStats {
+            id: self.server_id.clone(),
+            uptime: {
+                match self.boot_time {
+                    Some(time) => time.elapsed().as_secs(),
+                    None => 0,
                 }
             }
-            trace!("[Req: {} {}] Response headers set: {:?}", method, path, response.headers());
+        }
+    }
+}
 
-            if !response.headers().contains_key(hyper::header::CONTENT_TYPE) {
-                 response.headers_mut().insert(hyper::header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=utf-8"));
-            }
-             if !response.headers().contains_key(hyper::header::SERVER) {
-                 response.headers_mut().insert(hyper::header::SERVER, HeaderValue::from_static("Netter/HTTP"));
-            }
+#[axum::debug_handler]
+async fn handle_request(
+    State(interpreter): State<Option<Arc<Mutex<Interpreter>>>>,
+    req: Request<Body>,
+) -> impl IntoResponse {
+    let (parts, body) = req.into_parts();
 
-            Ok(response) 
-        } else {
-            warn!("[Req: {} {}] HTTP request received but no interpreter is configured for this server instance.", method, path);
-            let mut not_found = Response::new(full("Not Found (Interpreter Not Configured)"));
-            *not_found.status_mut() = StatusCode::NOT_FOUND;
-            Ok(not_found) 
+    let Some(interpreter) = interpreter else {
+        return axum::http::StatusCode::SERVICE_UNAVAILABLE.into_response();
+    };
+
+    {
+        if interpreter.lock().is_err() {
+            error!("[HTTP Server :: Handle Request] Failed to lock interpreter");
+            return (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR, 
+                "Internal Server Error!"
+            ).into_response();
+        }
+    }
+
+    let mut params = HashMap::new();
+    if let Some(query_str) = parts.uri.query() {
+        if let Ok(p) = serde_urlencoded::from_str::<HashMap<String, String>>(query_str) {
+            params = p;
+        }
+    }
+
+    let converted_headers = header_map_into_hashmap(&parts.headers);
+
+    let rdl_body = make_rdl_body(body, &parts.headers).await
+        .unwrap_or_else(|e| {
+            error!("[HTTP Server :: Handle Request] Failed while parsing body: {}", e);
+            HttpBodyVariant::Empty
+        });
+
+    let lock = match interpreter.lock() {
+        Ok(l) => l,
+        Err(_) => {
+            error!("[HTTP Server :: Handle Request] Failed to lock interpreter");
+            return (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR, 
+                "Internal Server Error!"
+            ).into_response();
         }
     };
 
-    
-    match &response_result {
-        Ok(resp) => {
-            info!(
-                "[Req: {} {}] Responded with status {} in {:?}",
-                method,
-                path,
-                resp.status(),
-                start_time.elapsed()
-            );
-        }
-        Err(_) => {
-             error!(
-                "[Req: {} {}] Handler resulted in an unexpected error after {:?}",
-                method,
-                path,
-                start_time.elapsed()
-            );
-        }
-    }
-
-    response_result
-}
-
-#[allow(dead_code)]
-fn empty() -> BoxBody<Bytes, hyper::Error> {
-    Empty::<Bytes>::new()
-        .map_err(|never| match never {}) 
-        .boxed() 
-}
-
-fn full<T: Into<Bytes>>(chunk: T) -> BoxBody<Bytes, hyper::Error> {
-    Full::new(chunk.into())
-        .map_err(|never| match never {}) 
-        .boxed() 
-}
-
-pub async fn run_hyper_server(
-    socket_addr_str: String,
-    server_state: Arc<Server>,
-    server_id: String,
-) {
-    info!(
-        "[HTTP Server ID: {}] Attempting to bind on {}...",
-        server_id, socket_addr_str
+    let response = lock.handle_request(
+        &parts.method.to_string(), 
+        parts.uri.path(), 
+        params, 
+        converted_headers, 
+        rdl_body
     );
 
-    let socket_addr = match SocketAddr::from_str(&socket_addr_str) {
-        Ok(addr) => addr,
-        Err(e) => {
-            error!(
-                "[HTTP Server ID: {}] Invalid address '{}': {}",
-                server_id, socket_addr_str, e
-            );
-            return;
+    (
+        StatusCode::from_u16(response.status).unwrap_or(StatusCode::OK),
+        response.body.unwrap_or("".to_string())
+    ).into_response()
+}
+
+
+fn header_map_into_hashmap(map: &HeaderMap) -> HashMap<String, String> {
+    let mut headers: HashMap<String, String> = HashMap::new();
+
+    for (name, value) in map.iter() {
+        let key = name.as_str().to_string();
+        let val_str = String::from_utf8_lossy(value.as_bytes()).into_owned();
+
+        headers.entry(key)
+            .and_modify(|existing| {
+                existing.push_str(", ");
+                existing.push_str(&val_str);
+            })
+            .or_insert(val_str);
+    }
+
+    headers
+}
+
+async fn make_rdl_body(body: axum::body::Body, headers: &axum::http::HeaderMap) -> Result<HttpBodyVariant, String> {
+    if let Some(content_length) = headers.get(CONTENT_LENGTH) {
+        if content_length == "0" {
+            return Ok(HttpBodyVariant::Empty);
         }
-    };
+    }
 
-    let listener = match TcpListener::bind(socket_addr).await {
-        Ok(l) => {
-            info!(
-                "[HTTP Server ID: {}] Listening on {}",
-                server_id, socket_addr
-            );
-            l
-        }
-        Err(e) => {
-            error!(
-                "[HTTP Server ID: {}] Bind failed {}: {}",
-                server_id, socket_addr, e
-            );
-            return;
-        }
-    };
+    let collected = body.collect().await
+        .map_err(|_| format!("[HTTP Server :: Packet Read] Failed while reading request"))?;
 
-    loop {
-        match listener.accept().await {
-            Ok((tcp_stream, remote_addr)) => {
-                trace!(
-                    "[HTTP Server ID: {}] Accepted from {}",
-                    server_id,
-                    remote_addr
-                );
-                let state_for_service = server_state.clone();
-                let state_for_tls_check = server_state.clone();
-                let id_clone = server_id.clone();
+    let bytes = collected.to_bytes();
 
-                tokio::spawn(async move {
-                    let executor = TokioExecutor::new();
+    if bytes.is_empty() {
+        return Ok(HttpBodyVariant::Empty);
+    }
 
-                    let hyper_service = service_fn(move |req| {
-                        handle_http_request(req, state_for_service.clone())
-                    });
-
-                    if state_for_tls_check.is_tls_enabled() {
-                        if let Some(tls_conf) = state_for_tls_check.rustls_config.clone() {
-                            let acceptor = TlsAcceptor::from(tls_conf);
-                            match acceptor.accept(tcp_stream).await {
-                                Ok(tls_stream) => {
-                                    trace!(
-                                        "[HTTP Server ID: {}] TLS Handshake OK for {}",
-                                        id_clone,
-                                        remote_addr
-                                    );
-                                    let io = TokioIo::new(tls_stream);
-                                    if let Err(err) = HyperAutoBuilder::new(executor)
-                                        .serve_connection(io, hyper_service)
-                                        .await
-                                    {
-                                        let is_incomplete = err
-                                            .downcast_ref::<hyper::Error>()
-                                            .map_or(false, |he| he.is_incomplete_message());
-                                        if !is_incomplete {
-                                            error!(
-                                                "[HTTP Server ID: {}] TLS Conn error {}: {}",
-                                                id_clone, remote_addr, err
-                                            );
-                                        }
-                                    }
-                                }
-                                Err(e) => {
-                                    error!(
-                                        "[HTTP Server ID: {}] TLS Handshake error {}: {}",
-                                        id_clone, remote_addr, e
-                                    );
-                                }
-                            }
-                        } else {
-                            error!(
-                                "[HTTP Server ID: {}] TLS enabled but config missing!",
-                                id_clone
-                            );
-                        }
-                    } else {
-                        let io = TokioIo::new(tcp_stream);
-                        if let Err(err) = HyperAutoBuilder::new(executor)
-                            .serve_connection(io, hyper_service)
-                            .await
-                        {
-                            let is_incomplete = err
-                                .downcast_ref::<hyper::Error>()
-                                .map_or(false, |he| he.is_incomplete_message());
-                            if !is_incomplete {
-                                error!(
-                                    "[HTTP Server ID: {}] HTTP Conn error {}: {}",
-                                    id_clone, remote_addr, err
-                                );
-                            }
-                        }
-                    }
-                    trace!(
-                        "[HTTP Server ID: {}] Conn finished for {}",
-                        id_clone,
-                        remote_addr
-                    );
-                });
-            }
-            Err(e) => {
-                error!(
-                    "[HTTP Server ID: {}] Accept error: {}. Pausing...",
-                    server_id, e
-                );
-                tokio::time::sleep(Duration::from_millis(100)).await;
-            }
-        }
+    match String::from_utf8(bytes.to_vec()) {
+        Ok(text) => Ok(HttpBodyVariant::Text(text)),
+        Err(_) => Ok(HttpBodyVariant::Bytes(bytes.to_vec()))
     }
 }

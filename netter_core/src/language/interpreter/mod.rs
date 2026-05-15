@@ -10,7 +10,7 @@ use log::{debug, info, warn};
 use crate::language::ast::AstNode;
 use crate::language::error::Result;
 use crate::interpreter_error;
-use crate::servers::http_core::TlsConfig;
+use crate::servers::TlsConfig;
 use executor::Executor;
 use route_handler::RouteHandler;
 use builtin::plugin::PluginManager;
@@ -53,12 +53,12 @@ impl Interpreter {
     }
 
     pub fn interpret(&mut self, ast: &AstNode) -> Result<()> {
-        debug!("Начало интерпретации AST узла: {:?}", ast);
+        debug!("Interpreting AST is started: {:?}", ast);
 
         let executor = Executor::new();
         executor.execute_ast(ast, self)?;
 
-        info!("Интерпретация конфигурации успешно завершена.");
+        info!("Interpreting is done.");
         Ok(())
     }
 
@@ -123,9 +123,9 @@ impl Interpreter {
     pub fn add_route(&mut self, path: String, method: String, handler: RouteHandler) {
         let route_key = format!("{}:{}", method, path);
         if self.routes.contains_key(&route_key) {
-            warn!("Переопределение маршрута: {}", route_key);
+            warn!("Redefining route: {}", route_key);
         }
-        debug!("Добавление обработчика для маршрута: {}", route_key);
+        debug!("Adding handler for route: {}", route_key);
         self.routes.insert(route_key, (path, handler));
     }
 
@@ -135,7 +135,7 @@ impl Interpreter {
             cert_path,
             key_path,
         });
-        debug!("Конфигурация TLS установлена: enabled={}", enabled);
+        debug!("TLS configuration setup: enabled={}", enabled);
     }
 
     pub fn set_global_error_handler(&mut self, error_var: String, actions: Vec<Box<AstNode>>) {
@@ -143,7 +143,7 @@ impl Interpreter {
             error_var: error_var.clone(),
             actions,
         });
-        debug!("Глобальный обработчик ошибок установлен для переменной '{}'", error_var);
+        debug!("Global error handler set for variable '{}'", error_var);
     }
 
     pub fn set_configuration(&mut self, config_type: String, host: String, port: String) {
@@ -152,14 +152,14 @@ impl Interpreter {
             host: host.clone(),
             port: port.clone(),
         });
-        debug!("Конфигурация сервера установлена: type={}, host={}, port={}", config_type, host, port);
+        debug!("Server configuration setup: type={}, host={}, port={}", config_type, host, port);
     }
 
     pub fn load_plugin(&mut self, path: &str, alias: &str) -> Result<()> {
-        debug!("Загрузка плагина: '{}' из '{}'", alias, path);
+        debug!("Downloading plugin: '{}' from '{}'", alias, path);
 
         if !Path::new(path).exists() {
-            return interpreter_error!(format!("Плагин не найден по пути: {}", path));
+            return interpreter_error!(format!("Plugin not found in: {}", path));
         }
 
         self.plugin_manager.load_plugin(path, alias)

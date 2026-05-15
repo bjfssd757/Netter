@@ -4,12 +4,19 @@ config {
     port = 8080;
 };
 
-import "path/to/std_plugin_name.dll" as std;
+import "E:/projects/rust/cli/target/release/plugin_name.dll" as std;
 
 global_error_handler(error) {
     Response.status(500);
     Response.headers("Content-Type", "application/json");
     Response.body("{\"error\": \"" + error + "\"}");
+    Response.send();
+};
+
+route "/test1" GET {
+    val a = 2;
+    val res = a + 2;
+    Response.body(res);
     Response.send();
 };
 
@@ -42,7 +49,7 @@ route "/test2" GET {
 route "/test3" GET {
     val a = std::is_email_valid("test@test.ru")?;
     val b = std::is_ip_valid("127.0.0.1")?;
-    val c = std::env_var("HOME")?;
+    val c = std::env_var("PATH")?;
     val d = std::random(1, 100)?;
     val e = std::to_uppercase("this is lowercase")?;
     val f = std::to_lowercase("THIS IS UPPERCASE")?;
@@ -51,6 +58,16 @@ route "/test3" GET {
     val after = std::now()?;
 
     val res = "a = " + a + "\n" + "b = " + b + "\n" + "c = " + c + "\n" + "d = " + d + "\n" + "e = " + e + "\n" + "f = " + f + "\n\n" + "before = " + now + "\n" + "after = " + after;
+
+    if (a == "true" && b == "true") {
+        res += "\n\n\n";
+        res += "in if statement";
+    } else {
+        res += "\n\n\n";
+        res += "in else statement:\n";
+        res += a;
+        res += "\n" + b;
+    }
 
     Response.body(res);
     Response.send();

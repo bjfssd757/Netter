@@ -7,6 +7,7 @@ use serde_json;
 use crate::language::error::{Result, Error, ErrorKind};
 use crate::runtime_error;
 use std::error::Error as StdError;
+use crate::language::rdl_types::RDLTypes;
 
 #[derive(Debug)]
 pub struct PluginManager {
@@ -49,10 +50,10 @@ impl PluginManager {
         self.loaded_plugins.contains_key(name)
     }
 
-    pub fn call_plugin_function(&self, plugin_name: &str, function_name: &str, args: &[String]) -> Result<String> {
+    pub fn call_plugin_function(&self, plugin_name: &str, function_name: &str, args: &[RDLTypes]) -> Result<RDLTypes> {
         if let Some(library) = self.loaded_plugins.get(plugin_name) {
             trace!("Диспетчеризация вызова плагина: {}::{}", plugin_name, function_name);
-
+            
             let args_json = serde_json::to_string(args).map_err(|e| {
                 Error {
                     kind: ErrorKind::Runtime,
@@ -121,7 +122,7 @@ impl PluginManager {
                 trace!("Результат от диспетчера {} для {}: {}", plugin_name, function_name, result_string);
 
                 if let Some(ok_result) = result_string.strip_prefix("OK:") {
-                    Ok(ok_result.to_string())
+                    Ok(ok_result.into())
                 } else if let Some(err_msg) = result_string.strip_prefix("ERR:") {
                     runtime_error!(err_msg.to_string())
                 } else {

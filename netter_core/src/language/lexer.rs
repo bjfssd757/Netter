@@ -1,4 +1,4 @@
-use log::{trace};
+use super::rdl_types::RDLTypes;
 use crate::language::token::{Token, TokenType};
 use crate::language::error::{Result, Error, ErrorKind};
 use crate::lexer_error;
@@ -79,7 +79,7 @@ impl Lexer {
         identifier
     }
 
-    pub fn read_string(&mut self) -> Result<String> {
+    pub fn read_string(&mut self) -> Result<RDLTypes> {
         self.consume();
 
         let mut string = String::new();
@@ -87,7 +87,7 @@ impl Lexer {
         while let Some(ch) = self.peek() {
             if ch == '"' {
                 self.consume();
-                return Ok(string);
+                return Ok(RDLTypes::String(string));
             } else if ch == '\\' {
                 self.consume();
 
@@ -130,7 +130,7 @@ impl Lexer {
         lexer_error!("Строка не закрыта", self.line, self.column)
     }
 
-    pub fn read_comment(&mut self) -> Result<String> {
+    pub fn read_comment(&mut self) -> Result<RDLTypes> {
         let mut comment = String::new();
 
         if let Some(next_ch) = self.peek() {
@@ -146,7 +146,7 @@ impl Lexer {
                             self.consume();
                         }
                     }
-                    Ok(comment)
+                    Ok(RDLTypes::String(comment))
                 },
                 '*' => {
                     self.consume();
@@ -162,7 +162,7 @@ impl Lexer {
                             return lexer_error!("Многострочный комментарий не закрыт", self.line, self.column);
                         }
                     }
-                    Ok(comment)
+                    Ok(RDLTypes::String(comment))
                 },
                 _ => lexer_error!("Неверный символ после '/'", self.line, self.column),
             }
@@ -171,7 +171,7 @@ impl Lexer {
         }
     }
 
-    fn read_number(&mut self) -> Result<i64> {
+    fn read_number(&mut self) -> Result<RDLTypes> {
         let mut number = String::new();
 
         while let Some(ch) = self.peek() {
@@ -183,12 +183,12 @@ impl Lexer {
             }
         }
 
-        number.parse::<i64>().map_err(|_| Error {
+        Ok(RDLTypes::Number(number.parse::<i64>().map_err(|_| Error {
             kind: ErrorKind::Lexer,
             message: format!("Не удалось преобразовать строку в число: {}", number),
             line: Some(self.line),
             column: Some(self.column),
-        })
+        })?))
     }
 
     pub fn next_token(&mut self) -> Result<Token> {
@@ -246,13 +246,13 @@ impl Lexer {
                 },
                 '"' => {
                     match self.read_string() {
-                        Ok(s) => Ok(Token { token_type: TokenType::String(s), line, column }),
+                        Ok(s) => Ok(Token { token_type: TokenType::String(s.try_into()?), line, column }),
                         Err(e) => Err(e),
                     }
                 },
                 '0'..='9' => {
                     let number = self.read_number()?;
-                    Ok(Token { token_type: TokenType::Number(number), line, column })
+                    Ok(Token { token_type: TokenType::Number(number.try_into()?), line, column })
                 }
                 '/' => {
                     self.consume();
@@ -264,7 +264,7 @@ impl Lexer {
                         Ok(Token { token_type: TokenType::DivideEqual, line, column })
                     } else {
                         match self.read_comment() {
-                            Ok(comment) => Ok(Token { token_type: TokenType::Comment(comment), line, column }),
+                            Ok(comment) => Ok(Token { token_type: TokenType::Comment(comment.try_into()?), line, column }),
                             Err(e) => Err(e),
                         }
                     }
@@ -352,6 +352,7 @@ impl Lexer {
                     let ident = self.read_identifier();
                     match ident.as_str() {
                         "route" => Ok(Token { token_type: TokenType::Route, line, column }),
+                        "middleware" => Ok(Token { token_type: TokenType::Middleware, line, column }),
                         "val" => Ok(Token { token_type: TokenType::Val, line, column }),
                         "if" => Ok(Token { token_type: TokenType::If, line, column }),
                         "else" => Ok(Token { token_type: TokenType::Else, line, column }),

@@ -2,6 +2,7 @@ use log::{trace, debug, error, info};
 use crate::language::ast::AstNode;
 use crate::language::error::{Result, Error, ErrorKind};
 use crate::language::interpreter::builtin::filesystem::FileSystem;
+use crate::language::rdl_types::RDLTypes;
 use crate::runtime_error;
 use super::context::ExecutionContext;
 use super::builtin::request::Request;
@@ -31,12 +32,12 @@ impl<'a> Evaluator<'a> {
         }
     }
 
-    pub fn evaluate(&mut self, expr: &AstNode) -> Result<String> {
+    pub fn evaluate(&mut self, expr: &AstNode) -> Result<RDLTypes> {
         trace!("Вычисление выражения: {:?}", expr);
         match expr {
-            AstNode::StringLiteral(value) => Ok(value.clone()),
-            AstNode::NumberLiteral(value) => Ok(value.to_string()),
-            AstNode::Identifier(name) => self.evaluate_identifier(name),
+            AstNode::StringLiteral(value) => Ok(RDLTypes::String(value.clone())),
+            AstNode::NumberLiteral(value) => Ok(RDLTypes::Number(*value)),
+            AstNode::Identifier(name) => self.evaluate_identifier(&name.clone().into()).map(|s| s.into()),
             AstNode::BinaryOp { left, operator, right } =>
                 self.evaluate_binary_op(left, operator, right),
             AstNode::FunctionCall { object, name, args, try_operator, unwrap_operator } =>
@@ -49,7 +50,7 @@ impl<'a> Evaluator<'a> {
         }
     }
 
-    fn evaluate_array_literal(&mut self, elements: &[Box<AstNode>]) -> Result<String> {
+    fn evaluate_array_literal(&mut self, elements: &[Box<AstNode>]) -> Result<RDLTypes> {
         let mut values = Vec::new();
 
         for element in elements {
@@ -57,8 +58,8 @@ impl<'a> Evaluator<'a> {
             match serde_json::from_str::<serde_json::Value>(&format!("\"{}\"", value)) {
                 Ok(json_val) => {
                     if let serde_json::Value::String(s) = json_val {
-                        if let Ok(num) = s.parse::<f64>() {
-                            values.push(serde_json::Value::Number(serde_json::Number::from_f64(num).unwrap_or_else(|| serde_json::Number::from(0))));
+                        if let Ok(num) = s.parse::<i64>() {
+                            values.push(serde_json::Value::Number(serde_json::Number::from(num)));
                         } else {
                             values.push(serde_json::Value::String(s));
                         }
@@ -67,31 +68,32 @@ impl<'a> Evaluator<'a> {
                     }
                 }
                 Err(_) => {
-                    values.push(serde_json::Value::String(value));
+                    values.push(serde_json::Value::String(value.try_into()?));
                 }
             }
         }
 
-        serde_json::to_string(&values).map_err(|e| Error {
+        Ok(serde_json::to_string(&values).map_err(|e| Error {
             kind: ErrorKind::Runtime,
             message: format!("Ошибка сериализации массива: {}", e),
             line: None,
             column: None,
-        })
+        })?.into())
     }
 
-    fn evaluate_array_access(&mut self, array: &Box<AstNode>, index: &Box<AstNode>) -> Result<String> {
+    fn evaluate_array_access(&mut self, array: &Box<AstNode>, index: &Box<AstNode>) -> Result<RDLTypes> {
         let array_value = self.evaluate(array)?;
         let index_value = self.evaluate(index)?;
 
-        let array_json: Vec<serde_json::Value> = serde_json::from_str(&array_value).map_err(|_| Error {
+        let array_json: Vec<serde_json::Value> = serde_json::from_str(array_value.to_string().as_str()).map_err(|_| Error {
             kind: ErrorKind::Runtime,
             message: format!("Значение '{}' не является массивом", array_value),
             line: None,
             column: None,
         })?;
 
-        let index_num = index_value.parse::<usize>().map_err(|_| Error {
+        let i = index_value.clone().try_into() as Result<usize>;
+        let index_num = i.map_err(|_| Error {
             kind: ErrorKind::Runtime,
             message: format!("Индекс '{}' должен быть числом", index_value),
             line: None,
@@ -104,54 +106,48 @@ impl<'a> Evaluator<'a> {
 
         let element = &array_json[index_num];
         match element {
-            serde_json::Value::String(s) => Ok(s.clone()),
-            serde_json::Value::Number(n) => Ok(n.to_string()),
-            serde_json::Value::Bool(b) => Ok(b.to_string()),
-            serde_json::Value::Null => Ok("null".to_string()),
-            _ => Ok(element.to_string()),
+            serde_json::Value::String(s) => Ok(s.clone().into()),
+            serde_json::Value::Number(n) => Ok(n.as_i64().unwrap().into()),
+            serde_json::Value::Bool(b) => Ok(b.clone().into()),
+            serde_json::Value::Null => Ok("null".into()),
+            _ => Ok(element.as_str().unwrap().into()),
         }
     }
 
-    fn evaluate_identifier(&self, name: &str) -> Result<String> {
+    fn evaluate_identifier(&self, name: &RDLTypes) -> Result<RDLTypes> {
         if let Some(value) = self.context.get_variable(name) {
             return Ok(value);
         }
 
-        match name {
-            "Request" | "Response" | "Database" | "FileSystem" => Ok(name.to_string()),
-            _ if self.plugin_manager.has_plugin(name) => Ok(name.to_string()),
+        match name.to_string().as_str() {
+            "Request" | "Response" | "Database" | "FileSystem" => Ok(name.to_string().into()),
+            _ if self.plugin_manager.has_plugin(name.to_string().as_str()) => Ok(name.to_string().into()),
             _ => runtime_error!(format!("Переменная или объект '{}' не найден", name)),
         }
     }
 
-    fn evaluate_binary_op(&mut self, left: &Box<AstNode>, operator: &str, right: &Box<AstNode>) -> Result<String> {
+    fn evaluate_binary_op(&mut self, left: &Box<AstNode>, operator: &str, right: &Box<AstNode>) -> Result<RDLTypes> {
         let left_value = self.evaluate(left)?;
         let right_value = self.evaluate(right)?;
 
         trace!("Бинарная операция: '{}' {} '{}'", left_value, operator, right_value);
 
         match operator {
-            "==" => Ok((left_value == right_value).to_string()),
-            "!=" => Ok((left_value != right_value).to_string()),
+            "==" => Ok(RDLTypes::String((left_value == right_value).to_string())),
+            "!=" => Ok(RDLTypes::String((left_value != right_value).to_string())),
             "+" => {
-                // let left_value = self.evaluate(left)?;
-                // let right_value = self.evaluate(right)?;
-
-                if let (Ok(left_num), Ok(right_num)) = (left_value.parse::<f64>(), right_value.parse::<f64>()) {
-                    let result = (left_num + right_num);
-                    if result.is_nan() || result.is_infinite() {
-                        panic!("Arithmetic overflow or invalid operation")
-                    }
-                    Ok(result.to_string())
+                if let (Ok(left_num), Ok(right_num)) = (left_value.clone().try_into() as Result<i64>, right_value.clone().try_into() as Result<i64>) {
+                    let result = left_num + right_num;
+                    // if result.is_nan() || result.is_infinite() {
+                    //     panic!("Arithmetic overflow or invalid operation")
+                    // }
+                    Ok(RDLTypes::Number(result))
                 } else {
-                    Ok(format!("{}{}", left_value, right_value))
+                    Ok(RDLTypes::String(format!("{}{}", left_value, right_value)))
                 }
             },
             "-" => {
-                // let left_value = self.evaluate(left)?;
-                // let right_value = self.evaluate(right)?;
-
-                let left_num = left_value.parse::<f64>()
+                let left_num: i64 = left_value.clone().try_into()
                     .map_err(|_|
                         Error {
                             kind: ErrorKind::Runtime,
@@ -160,7 +156,7 @@ impl<'a> Evaluator<'a> {
                             message: format!("Невозможно преобразовать '{}' в число для вычитания", left_value),
                         }.into()
                     )?;
-                let right_num = right_value.parse::<f64>()
+                let right_num: i64 = right_value.clone().try_into()
                     .map_err(|_|
                         Error {
                             kind: ErrorKind::Runtime,
@@ -170,16 +166,13 @@ impl<'a> Evaluator<'a> {
                         }.into()
                     )?;
                 let result = left_num - right_num;
-                if result.is_nan() || result.is_infinite() {
-                    panic!("Arithmetic overflow or invalid operation")
-                }
-                Ok(result.to_string())
+                // if result.is_nan() || result.is_infinite() {
+                //     panic!("Arithmetic overflow or invalid operation")
+                // }
+                Ok(RDLTypes::Number(result))
             },
             "*" => {
-                // let left_value = self.evaluate(left)?;
-                // let right_value = self.evaluate(right)?;
-
-                let left_num = left_value.parse::<f64>()
+                let left_num: i64 = left_value.clone().try_into()
                     .map_err(|_|
                         Error {
                             kind: ErrorKind::Runtime,
@@ -188,7 +181,7 @@ impl<'a> Evaluator<'a> {
                             message: format!("Невозможно преобразовать '{}' в число для умножения", left_value)
                         }.into()
                     )?;
-                let right_num = right_value.parse::<f64>()
+                let right_num: i64 = right_value.clone().try_into()
                     .map_err(|_|
                         Error {
                             kind: ErrorKind::Runtime,
@@ -198,16 +191,13 @@ impl<'a> Evaluator<'a> {
                         }.into()
                     )?;
                 let result = left_num * right_num;
-                if result.is_nan() || result.is_infinite() {
-                    panic!("Arithmetic overflow or invalid operation")
-                }
-                Ok(result.to_string())
+                // if result.is_nan() || result.is_infinite() {
+                //     panic!("Arithmetic overflow or invalid operation")
+                // }
+                Ok(RDLTypes::Number(result))
             },
             "/" => {
-                // let left_value = self.evaluate(left)?;
-                // let right_value = self.evaluate(right)?;
-
-                let left_num = left_value.parse::<f64>()
+                let left_num: i64 = left_value.clone().try_into()
                     .map_err(|_|
                         Error {
                             kind: ErrorKind::Runtime,
@@ -216,7 +206,7 @@ impl<'a> Evaluator<'a> {
                             message: format!("Невозможно преобразовать '{}' в число для деления", left_value)
                         }.into()
                     )?;
-                let right_num = right_value.parse::<f64>()
+                let right_num: i64 = right_value.clone().try_into()
                     .map_err(|_|
                         Error {
                             kind: ErrorKind::Runtime,
@@ -225,21 +215,18 @@ impl<'a> Evaluator<'a> {
                             message: format!("Невозможно преобразовать '{}' в число для деления", right_value)
                         }.into()
                     )?;
-                if right_num == 0.0 {
+                if right_num == 0 {
                     return runtime_error!("Деление на ноль".to_string());
                 }
                 let result = left_num / right_num;
-                if result.is_nan() || result.is_infinite() {
-                    panic!("Arithmetic overflow or invalid operation")
-                }
+                // if result.is_nan() || result.is_infinite() {
+                //     panic!("Arithmetic overflow or invalid operation")
+                // }
 
-                Ok(result.to_string())
+                Ok(RDLTypes::Number(result))
             },
             "^" => {
-                // let left_value = self.evaluate(left)?;
-                // let right_value = self.evaluate(right)?;
-
-                let left_num = left_value.parse::<f64>()
+                let left_num: i64 = left_value.clone().try_into()
                     .map_err(|_|
                         Error {
                             kind: ErrorKind::Runtime,
@@ -248,7 +235,7 @@ impl<'a> Evaluator<'a> {
                             message: format!("Невозможно преобразовать '{}' в число для возведения в степень", left_value)
                         }.into()
                     )?;
-                let right_num = right_value.parse::<f64>()
+                let right_num: i64 = right_value.clone().try_into()
                     .map_err(|_|
                         Error {
                             kind: ErrorKind::Runtime,
@@ -257,48 +244,47 @@ impl<'a> Evaluator<'a> {
                             message: format!("Невозможно преобразовать '{}' в число для возведения в степень", right_value)
                         }.into()
                     )?;
-                let result = left_num.powf(right_num);
-                if result.is_nan() || result.is_infinite() {
-                    panic!("Arithmetic overflow or invalid operation")
-                }
+                if right_num < 0 {
 
-                Ok(result.to_string())
+                }
+                let result = crate::utils::powi(left_num, right_num);
+                // if result.is_nan() || result.is_infinite() {
+                //     panic!("Arithmetic overflow or invalid operation")
+                // }
+
+                Ok(RDLTypes::Number(result))
             },
             "&&" => {
                 // let left_value = self.evaluate(left)?;
 
-                if left_value == "false" || left_value == "0" || left_value == "" {
-                    return Ok("false".to_string());
+                if left_value == false.into() {
+                    return Ok(RDLTypes::Boolean(false));
                 }
 
                 // let right_value = self.evaluate(right)?;
 
-                Ok(if right_value != "false" && right_value != "0" && right_value != "" {
-                    "true".to_string()
+                Ok(if right_value != false.into() {
+                    RDLTypes::Boolean(true)
                 } else {
-                    "false".to_string()
+                    RDLTypes::Boolean(false)
                 })
             },
             "||" => {
-                // let left_value = self.evaluate(left)?;
-
-                if left_value != "false" && left_value != "0" && left_value != "" {
-                    return Ok("true".to_string());
+                if left_value != false.into() {
+                    return Ok(RDLTypes::Boolean(true));
                 }
 
-                // let right_value = self.evaluate(right)?;
-
-                Ok(if right_value != "false" && right_value != "0" && right_value != "" {
-                    "true".to_string()
+                Ok(if right_value != false.into() {
+                    RDLTypes::Boolean(true)
                 } else {
-                    "false".to_string()
+                    RDLTypes::Boolean(false)
                 })
             },
             _ => runtime_error!(format!("Неподдерживаемый бинарный оператор: {}", operator)),
         }
     }
 
-    fn evaluate_property_access(&mut self, object: &Box<AstNode>, property: &str) -> Result<String> {
+    fn evaluate_property_access(&mut self, object: &Box<AstNode>, property: &str) -> Result<RDLTypes> {
         let obj_value = self.evaluate(object)?;
         runtime_error!(format!("Доступ к свойству '{}.{}' не реализован", obj_value, property))
     }
@@ -310,7 +296,7 @@ impl<'a> Evaluator<'a> {
         args: &[Box<AstNode>],
         try_operator: bool,
         unwrap_operator: bool
-    ) -> Result<String> {
+    ) -> Result<RDLTypes> {
         let mut evaluated_args = Vec::new();
         for arg in args {
             evaluated_args.push(self.evaluate(arg)?);
@@ -358,11 +344,11 @@ impl<'a> Evaluator<'a> {
         }
     }
 
-    fn call_filesystem_method(&self, method: &str, args: &[String]) -> Result<String> {
+    fn call_filesystem_method(&self, method: &str, args: &[RDLTypes]) -> Result<RDLTypes> {
         match method {
             "exists" => {
                 if args.len() == 1 {
-                    FileSystem::exists(&args[0]).map(|v| v.to_string())
+                    FileSystem::exists(&args[0]).map(|v| v.into())
                 } else {
                     runtime_error!("Метод FileSystem.exists требует 1 аргумент")
                 }
@@ -376,14 +362,14 @@ impl<'a> Evaluator<'a> {
             },
             "write_text" => {
                 if args.len() == 2 {
-                    FileSystem::write_text(&args[0], &args[1]).map(|_| "OK".to_string())
+                    FileSystem::write_text(&args[0], &args[1]).map(|_| "OK".into())
                 } else {
                     runtime_error!("Метод FileSystem.write_text требует 2 аргумента")
                 }
             },
             "is_directory" => {
                 if args.len() == 1 {
-                    FileSystem::is_directory(&args[0]).map(|v| v.to_string())
+                    FileSystem::is_directory(&args[0]).map(|v| v.into())
                 } else {
                     runtime_error!("Метод FileSystem.is_directory требует 1 аргумент")
                 }
@@ -399,10 +385,10 @@ impl<'a> Evaluator<'a> {
         }
     }
 
-    fn call_database_method(&self, method: &str, args: &[String]) -> Result<String> {
+    fn call_database_method(&self, method: &str, args: &[RDLTypes]) -> Result<RDLTypes> {
         match method {
             "get_all" => Database::get_all(),
-            "check" => Database::check().map(|v| v.to_string()),
+            "check" => Database::check().map(|v| v.into()),
             "get" => {
                 if args.len() == 1 {
                     Database::get(&args[0])
@@ -412,7 +398,7 @@ impl<'a> Evaluator<'a> {
             },
             "add" => {
                 if args.len() >= 3 {
-                    Database::add(&args[0], &args[1], &args[2]).map(|_| "OK".to_string())
+                    Database::add(&args[0], &args[1], &args[2]).map(|_| "OK".into())
                 } else {
                     runtime_error!("Метод Database.add требует 3 аргумента")
                 }
@@ -421,11 +407,11 @@ impl<'a> Evaluator<'a> {
         }
     }
 
-    fn call_response_method(&mut self, method: &str, args: &[String]) -> Result<String> {
+    fn call_response_method(&mut self, method: &str, args: &[RDLTypes]) -> Result<RDLTypes> {
         match method {
             "body" => {
                 if args.len() == 1 {
-                    self.response.body(&args[0]);
+                    self.response.body((&args[0]).to_string());
                     debug!("body in call_response_methods.body():\n{:?}\n", self.response.body.clone());
                     Ok(args[0].clone())
                 } else {
@@ -435,13 +421,14 @@ impl<'a> Evaluator<'a> {
             "send" => {
                 debug!("Enter in Response.send() method in call_response_method()\n{:?}\n", self.response.clone());
                 self.response.send();
-                Ok("".to_string())
+                Ok("".into())
             },
             "status" => {
                 if args.len() == 1 {
-                    if let Ok(status_code) = args[0].parse::<u16>() {
-                        self.response.status(status_code);
-                        Ok(status_code.to_string())
+                    let status_code = args[0].clone().try_into();
+                    if let Ok(code) = status_code {
+                        self.response.status(code);
+                        Ok(code.into())
                     } else {
                         runtime_error!(format!("Неверный статус код: {}", args[0]))
                     }
@@ -452,7 +439,7 @@ impl<'a> Evaluator<'a> {
             "headers" | "set_header" => {
                 if args.len() == 2 {
                     self.response.set_header(&args[0], &args[1]);
-                    Ok(format!("{}: {}", args[0], args[1]))
+                    Ok(format!("{}: {}", args[0], args[1]).into())
                 } else {
                     runtime_error!("Метод Response.headers требует 2 аргумента")
                 }
@@ -461,7 +448,7 @@ impl<'a> Evaluator<'a> {
         }
     }
 
-    fn call_request_method(&self, method: &str, args: &[String]) -> Result<String> {
+    fn call_request_method(&self, method: &str, args: &[RDLTypes]) -> Result<RDLTypes> {
         match method {
             "get_params" | "get_param" => {
                 if args.len() == 1 {
@@ -493,7 +480,7 @@ impl<'a> Evaluator<'a> {
             },
             "is_binary" => {
                 if args.is_empty() {
-                    Ok(self.request.is_body_binary().to_string())
+                    Ok(self.request.is_body_binary().into())
                 } else {
                     runtime_error!("Метод Request.is_binary не принимает аргументов")
                 }
@@ -502,12 +489,12 @@ impl<'a> Evaluator<'a> {
         }
     }
 
-    fn call_global_function(&self, name: &str, args: &[String]) -> Result<String> {
+    fn call_global_function(&self, name: &str, args: &[RDLTypes]) -> Result<RDLTypes> {
         match name {
             "log_error" => {
                 if args.len() == 1 {
                     error!("{}", args[0]);
-                    Ok("".to_string())
+                    Ok("".into())
                 } else {
                     runtime_error!("Функция log_error требует 1 аргумент")
                 }
@@ -515,7 +502,7 @@ impl<'a> Evaluator<'a> {
             "log_info" => {
                 if args.len() == 1 {
                     info!("{}", args[0]);
-                    Ok("".to_string())
+                    Ok("".into())
                 } else {
                     runtime_error!("Функция log_info требует 1 аргумент")
                 }
@@ -523,7 +510,7 @@ impl<'a> Evaluator<'a> {
             "log_trace" => {
                 if args.len() == 1 {
                     trace!("{}", args[0]);
-                    Ok("".to_string())
+                    Ok("".into())
                 } else {
                     runtime_error!("Функция log_trace требует 1 аргумент")
                 }
@@ -567,44 +554,47 @@ impl<'a> Evaluator<'a> {
         }
     }
 
-    fn array_length(&self, array_str: &str) -> Result<String> {
-        let array: Vec<serde_json::Value> = serde_json::from_str(array_str).map_err(|_| Error {
+    fn array_length(&self, array_name: &RDLTypes) -> Result<RDLTypes> {
+        let array: Vec<serde_json::Value> = serde_json::from_str(array_name.to_string().as_str()).map_err(|_| Error {
             kind: ErrorKind::Runtime,
             message: "Аргумент не является массивом".to_string(),
             line: None,
             column: None,
         })?;
-        Ok(array.len().to_string())
+        Ok(array.len().into())
     }
 
-    fn array_push(&self, array_str: &str, element: &str) -> Result<String> {
-        let mut array: Vec<serde_json::Value> = serde_json::from_str(array_str).map_err(|_| Error {
+    fn array_push(&self, array_name: &RDLTypes, element: &RDLTypes) -> Result<RDLTypes> {
+        let mut array: Vec<serde_json::Value> = serde_json::from_str(array_name.to_string().as_str()).map_err(|_| Error {
             kind: ErrorKind::Runtime,
             message: "Первый аргумент не является массивом".to_string(),
             line: None,
             column: None,
         })?;
 
-        if let Ok(num) = element.parse::<f64>() {
-            array.push(serde_json::Value::Number(serde_json::Number::from_f64(num).unwrap_or_else(|| serde_json::Number::from(0))));
-        } else if element == "true" {
+
+        let e = element.clone();
+        let n = e.clone().try_into();
+        if let Ok(num) = n {
+            array.push(serde_json::Value::Number(serde_json::Number::from_i128(num).unwrap_or_else(|| serde_json::Number::from(0))));
+        } else if e == true.into() {
             array.push(serde_json::Value::Bool(true));
-        } else if element == "false" {
+        } else if e == false.into() {
             array.push(serde_json::Value::Bool(false));
         } else {
-            array.push(serde_json::Value::String(element.to_string()));
+            array.push(serde_json::Value::String(e.to_string()));
         }
 
-        serde_json::to_string(&array).map_err(|e| Error {
+        Ok(serde_json::to_string(&array).map_err(|e| Error {
             kind: ErrorKind::Runtime,
             message: format!("Ошибка сериализации массива: {}", e),
             line: None,
             column: None,
-        })
+        })?.into())
     }
 
-    fn array_pop(&self, array_str: &str) -> Result<String> {
-        let mut array: Vec<serde_json::Value> = serde_json::from_str(array_str).map_err(|_| Error {
+    fn array_pop(&self, array_name: &RDLTypes) -> Result<RDLTypes> {
+        let mut array: Vec<serde_json::Value> = serde_json::from_str(array_name.to_string().as_str()).map_err(|_| Error {
             kind: ErrorKind::Runtime,
             message: "Аргумент не является массивом".to_string(),
             line: None,
@@ -616,16 +606,16 @@ impl<'a> Evaluator<'a> {
         }
 
         array.pop();
-        serde_json::to_string(&array).map_err(|e| Error {
+        Ok(serde_json::to_string(&array).map_err(|e| Error {
             kind: ErrorKind::Runtime,
             message: format!("Ошибка сериализации массива: {}", e),
             line: None,
             column: None,
-        })
+        })?.into())
     }
 
-    fn array_contains(&self, array_str: &str, element: &str) -> Result<String> {
-        let array: Vec<serde_json::Value> = serde_json::from_str(array_str).map_err(|_| Error {
+    fn array_contains(&self, array_name: &RDLTypes, element: &RDLTypes) -> Result<RDLTypes> {
+        let array: Vec<serde_json::Value> = serde_json::from_str(array_name.to_string().as_str()).map_err(|_| Error {
             kind: ErrorKind::Runtime,
             message: "Первый аргумент не является массивом".to_string(),
             line: None,
@@ -640,16 +630,17 @@ impl<'a> Evaluator<'a> {
                 _ => continue,
             };
 
-            if item_str == element {
-                return Ok("true".to_string());
+            let element_str: String = element.clone().try_into()?;
+            if item_str == element_str {
+                return Ok(true.into());
             }
         }
 
-        Ok("false".to_string())
+        Ok(false.into())
     }
 
-    fn array_join(&self, array_str: &str, separator: &str) -> Result<String> {
-        let array: Vec<serde_json::Value> = serde_json::from_str(array_str).map_err(|_| Error {
+    fn array_join(&self, array_name: &RDLTypes, separator: &RDLTypes) -> Result<RDLTypes> {
+        let array: Vec<serde_json::Value> = serde_json::from_str(array_name.to_string().as_str()).map_err(|_| Error {
             kind: ErrorKind::Runtime,
             message: "Первый аргумент не является массивом".to_string(),
             line: None,
@@ -666,6 +657,6 @@ impl<'a> Evaluator<'a> {
             }
         }).collect();
 
-        Ok(string_items.join(separator))
+        Ok(string_items.join(separator.to_string().as_str()).into())
     }
 }

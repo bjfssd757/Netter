@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use crate::language::rdl_types::RDLTypes;
 
 #[derive(Debug, Clone)]
 pub struct Response {
@@ -38,7 +39,7 @@ impl Response {
         self
     }
 
-    pub fn set_header(&mut self, key: &str, value: &str) -> &mut Self {
+    pub fn set_header(&mut self, key: &RDLTypes, value: &RDLTypes) -> &mut Self {
         self.headers.insert(key.to_string(), value.to_string());
         self
     }

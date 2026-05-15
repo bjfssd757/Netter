@@ -3,6 +3,7 @@ use std::fmt;
 #[derive(Debug, PartialEq, Clone)]
 pub enum TokenType {
     Route,              // route
+    Middleware,         // middleware
     Val,                // val
     Var,                // var
     If,                 // if
@@ -75,6 +76,7 @@ impl fmt::Display for Token {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match &self.token_type {
             TokenType::Route => write!(f, "route"),
+            TokenType::Middleware => write!(f, "middleware"),
             TokenType::Val => write!(f, "val"),
             TokenType::Var => write!(f, "var"),
             TokenType::If => write!(f, "if"),

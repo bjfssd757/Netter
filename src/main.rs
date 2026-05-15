@@ -299,9 +299,9 @@ fn handle_service_response(response: Response) {
         Response::AllServersStatusReport(servers) => {
             println!("Status: All Servers Information");
             if servers.is_empty() {
-                println!("Status: No active servers managed by the service.");
+                println!("Status: No active server managed by the service.");
             } else {
-                println!("Status: List of active servers ({})", servers.len());
+                println!("Status: List of active server ({})", servers.len());
                 for info in servers {
                     println!("---");
                     print_server_info(&info);
@@ -513,11 +513,11 @@ async fn install_service() -> Result<ExitCode, Box<dyn std::error::Error>> {
 
         if output.status.success() {
             println!("Service created successfully.");
-            println!("You may need to configure firewall rules if servers listen on non-local addresses.");
+            println!("You may need to configure firewall rules if server listen on non-local addresses.");
             println!("Use 'netter service start' to start the service.");
             return Ok(ExitCode::SUCCESS)
         } else {
-            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stderr = String::from_utf8_lossy(&output.stdout);
             error!("sc create failed: {}", stderr);
             return Err(format!("Failed to create service: {}", stderr).into())
         }

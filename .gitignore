@@ -5,6 +5,7 @@ SERVER_STATE.json
 /build
 /logs
 *.log
+*.dll
 /tls
 /build_release
 /configure.bat

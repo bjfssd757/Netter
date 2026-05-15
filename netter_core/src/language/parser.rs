@@ -48,6 +48,8 @@ impl Parser {
                 global_error_handler = Some(Box::new(self.global_error_handler()?));
             } else if self.check(&TokenType::Route) {
                 statements.push(Box::new(self.route()?));
+            } else if self.check(&TokenType::Middleware) {
+                statements.push(Box::new(self.middleware()?));
             } else if self.check(&TokenType::Config) {
                 if config.is_some() {
                     return Err(Error {
@@ -63,7 +65,7 @@ impl Parser {
             } else {
                 return Err(Error {
                     kind: ErrorKind::Parser,
-                    message: format!("Ожидается 'route', 'tls' или 'config', получено: {:?}", self.peek().token_type),
+                    message: format!("Expected 'route', 'middleware', 'tls' or 'config', got: {:?}", self.peek().token_type),
                     line: Some(self.peek().line),
                     column: Some(self.peek().column),
                 });
@@ -337,6 +339,39 @@ impl Parser {
         }
     }
 
+    fn middleware(&mut self) -> Result<AstNode> {
+        self.consume(&TokenType::Middleware, "Expected keyword 'middleware'")?;
+
+        let path_token = self.consume(&TokenType::String(String::new()), "Expected route path string")?;
+        let path = match &path_token.token_type {
+            TokenType::String(s) => s.clone(),
+            _ => return parser_error!("Impossible case when parsing route path", path_token.line, path_token.column),
+        };
+
+        let method_token = self.consume(&TokenType::HttpMethod(String::new()), "Expected HTTP method")?;
+        let method = match &method_token.token_type {
+            TokenType::HttpMethod(m) => m.clone(),
+            _ => return parser_error!("Impossible case when parsing HTTP method", method_token.line, method_token.column),
+        };
+
+        let body = self.block()?;
+
+        let on_error = if self.match_token(&TokenType::OnError) {
+            Some(Box::new(self.error_handler()?))
+        } else {
+            None
+        };
+
+        self.consume(&TokenType::Semicolon, "Expected ';' after middleware block")?;
+
+        Ok(AstNode::Route {
+            path,
+            method,
+            body: Box::new(body),
+            on_error,
+        })
+    }
+
     fn route(&mut self) -> Result<AstNode> {
         self.consume(&TokenType::Route, "Ожидается ключевое слово 'route'")?;
 
@@ -449,7 +484,7 @@ impl Parser {
                 self.consume(&TokenType::Semicolon, "Ожидается ';' после оператора +=")?;
 
                 return Ok(AstNode::BinaryOp {
-                    left: Box::new(AstNode::Identifier((ident_name))),
+                    left: Box::new(AstNode::Identifier(ident_name)),
                     operator: "+=".to_string(),
                     right: Box::new(value),
                 });

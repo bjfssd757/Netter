@@ -4,8 +4,8 @@ use std::{
     fs,
     io,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
     time::Duration,
+    sync::Arc,
 };
 use lazy_static::lazy_static;
 use log::{debug, error, info, trace, warn, LevelFilter};
@@ -15,15 +15,10 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     sync::mpsc as tokio_mpsc,
     task::JoinHandle,
+    sync::Mutex,
 };
 use netter_core::{
-    servers::http_core::{self, Server as HttpCoreServer},
-    Command,
-    CoreError,
-    CoreExecutionResult,
-    Response,
-    ServerInfo,
-    ServerType,
+    Command, CoreError, CoreExecutionResult, Response, ServerInfo, ServerType, servers::{Server, http_core::HttpServer}
 };
 use netter_logger;
 
@@ -131,19 +126,13 @@ fn get_state_file_path_with_create_dir() -> Option<PathBuf> {
     Some(path.to_path_buf())
 }
 
-fn save_state() {
+async fn save_state() {
     let path = match get_state_file_path_with_create_dir() {
         Some(p) => p,
         None => return,
     };
     info!("Saving state to {}", path.display());
-    let servers = match RUNNING_SERVERS.lock() {
-        Ok(g) => g,
-        Err(p) => {
-            error!("Mutex poisoned on save: {}", p);
-            return;
-        }
-    };
+    let servers = RUNNING_SERVERS.lock().await;
     let serializable_servers: HashMap<String, RunningServer> = servers
         .iter()
         .map(|(id, rs)| {
@@ -156,7 +145,9 @@ fn save_state() {
             )
         })
         .collect();
+
     drop(servers);
+
     match bincode::serialize(&serializable_servers) {
         Ok(encoded) => {
             let temp_path = path.with_extension("tmp");
@@ -196,7 +187,7 @@ fn save_state() {
     }
 }
 
-fn load_state() {
+async fn load_state() {
     let path = match get_state_file_path_with_create_dir() {
         Some(p) => p,
         None => return,
@@ -210,13 +201,9 @@ fn load_state() {
         Ok(encoded) => {
             match bincode::deserialize::<HashMap<String, RunningServer>>(&encoded) {
                 Ok(loaded) => {
-                    match RUNNING_SERVERS.lock() {
-                        Ok(mut s) => {
-                            *s = loaded;
-                            info!("Loaded {} servers.", s.len());
-                        }
-                        Err(p) => error!("Mutex poisoned on load: {}", p),
-                    }
+                    let len = loaded.len();
+                    *RUNNING_SERVERS.lock().await = loaded;
+                    info!("Loaded {} server.", len);
                 }
                 Err(e) => {
                     error!("Failed deserialize {}: {}.", path.display(), e);
@@ -254,20 +241,24 @@ async fn process_command(command: Command, client_id: Uuid) -> Result<Response, 
                     info!("Handling StopServer: {}", server_id);
                     let mut servers = RUNNING_SERVERS
                         .lock()
-                        .map_err(|_| CoreError::InternalError("Mutex poisoned".to_string()))?;
+                        .await;
                     if let Some(srv) = servers.get_mut(&server_id) {
                         if let Some(h) = srv.task_handle.take() {
                             info!("Aborting task {}", server_id);
                             h.abort();
                             servers.remove(&server_id);
+
                             drop(servers);
-                            save_state();
+
+                            save_state().await;
                             Ok(Response::ServerStopped(server_id))
                         } else {
                             warn!("Task handle missing for {}. Removing.", server_id);
                             servers.remove(&server_id);
+
                             drop(servers);
-                            save_state();
+
+                            save_state().await;
                             Err(CoreError::OperationFailed(format!(
                                 "Handle missing for {}, removed.",
                                 server_id
@@ -282,7 +273,7 @@ async fn process_command(command: Command, client_id: Uuid) -> Result<Response, 
                     info!("Handling GetServerStatus: {}", server_id);
                     let servers = RUNNING_SERVERS
                         .lock()
-                        .map_err(|_| CoreError::InternalError("Mutex poisoned".to_string()))?;
+                        .await;
                     if let Some(srv) = servers.get(&server_id) {
                         let mut info = srv.info.clone();
                         info.status = match srv.task_handle {
@@ -305,7 +296,7 @@ async fn process_command(command: Command, client_id: Uuid) -> Result<Response, 
                     let list: Vec<ServerInfo> = {
                         let servers = RUNNING_SERVERS
                             .lock()
-                            .map_err(|_| CoreError::InternalError("Mutex poisoned".to_string()))?;
+                            .await;
                         servers
                             .values()
                             .map(|rs| {
@@ -319,7 +310,7 @@ async fn process_command(command: Command, client_id: Uuid) -> Result<Response, 
                             })
                             .collect()
                     };
-                    info!("Found {} servers.", list.len());
+                    info!("Found {} server.", list.len());
                     Ok(Response::AllServersStatusReport(list))
                 }
                 _ => Ok(core_response),
@@ -360,7 +351,8 @@ async fn process_command(command: Command, client_id: Uuid) -> Result<Response, 
                 (default_host.to_string(), default_port)
             };
 
-            let server_state = Arc::new(HttpCoreServer::from_interpreter(interpreter, tls_config));
+            let server_state_v2 = Arc::new(Mutex::new(HttpServer::from_interpreter(interpreter, tls_config, server_id.clone())));
+            // let server_state = Arc::new(HttpServer::from_interpreter(interpreter, tls_config));
 
             let socket_addr_str = format!("{}:{}", addr_str, port);
             info!(
@@ -369,11 +361,15 @@ async fn process_command(command: Command, client_id: Uuid) -> Result<Response, 
             );
 
             let task_handle = tokio::spawn({
-                let id_c = server_id.clone();
-                let state_c = server_state.clone();
+                // let id_c = server_id.clone();
+                // let state_c = server_state.clone();
+                let state_c = server_state_v2.clone();
                 let addr_c = socket_addr_str.clone();
+
                 async move {
-                    http_core::run_hyper_server(addr_c, state_c, id_c).await;
+                    let mut guard = state_c.lock().await;
+
+                    guard.start(addr_c).await;
                 }
             });
 
@@ -388,7 +384,7 @@ async fn process_command(command: Command, client_id: Uuid) -> Result<Response, 
              {
                 let mut servers = RUNNING_SERVERS
                     .lock()
-                    .map_err(|p| CoreError::InternalError(format!("Mutex poisoned on server insert: {}", p)))?;
+                    .await;
                  servers.insert(
                     server_id.clone(),
                     RunningServer {
@@ -397,7 +393,7 @@ async fn process_command(command: Command, client_id: Uuid) -> Result<Response, 
                     },
                 );
             }
-            save_state();
+            save_state().await;
             info!("Server {} added to running list and state saved.", server_id);
             Ok(Response::ServerStarted(server_info))
         }
@@ -406,13 +402,25 @@ async fn process_command(command: Command, client_id: Uuid) -> Result<Response, 
 
 #[cfg(windows)]
 mod windows_service_impl {
-    use super::*;
+    use tokio::runtime::Handle;
+
+use super::*;
     pub(crate) const SERVICE_NAME: &str = super::APPLICATION;
     const SERVICE_TYPE: ServiceType = ServiceType::OWN_PROCESS;
     const PIPE_NAME: &str = r"\\.\pipe\MyNetterServicePipe";
     define_windows_service!(ffi_service_main, service_main);
 
     pub fn service_main(arguments: Vec<OsString>) {
+        let rt = match tokio::runtime::Runtime::new() {
+            Ok(runtime) => runtime,
+            Err(e) => {
+                error!("Failed to create Tokio runtime: {}", e);
+                log::logger().flush();
+                report_service_error_status(102);
+                std::process::exit(102);
+            }
+        };
+
         let log_dir = &*LOG_PATH;
         if let Err(e) = fs::create_dir_all(log_dir) {
             eprintln!(
@@ -439,7 +447,11 @@ mod windows_service_impl {
         );
         info!("Args: {:?}", arguments);
         info!("State file: {}", STATE_FILE_PATH.display());
-        load_state();
+
+        rt.block_on(async {
+            load_state().await;
+        });
+
         let (shutdown_tx, shutdown_rx) = mpsc::channel();
         match run_service(arguments, shutdown_tx, shutdown_rx) {
             Ok(_) => info!("Service {} stopped.", SERVICE_NAME),
@@ -583,7 +595,9 @@ mod windows_service_impl {
         })?;
         info!("Status: StopPending (1)");
 
-        save_state();
+        rt.block_on(async {
+            save_state().await;
+        });
 
         status_handle.set_service_status(ServiceStatus {
             service_type: SERVICE_TYPE,
@@ -676,10 +690,9 @@ mod windows_service_impl {
 
     fn create_pipe_server() -> io::Result<NamedPipeServer> {
         ServerOptions::new()
-            // Было: .pipe_mode(PipeMode::Message)
-            .pipe_mode(PipeMode::Byte) // <<< ИЗМЕНИТЬ НА Byte
-            .first_pipe_instance(false) // Оставить как есть (или true, если это первая инстанция)
-            .reject_remote_clients(true) // Оставить как есть
+            .pipe_mode(PipeMode::Byte)
+            .first_pipe_instance(false)
+            .reject_remote_clients(true)
             .create(PIPE_NAME)
     }
 
@@ -687,12 +700,9 @@ mod windows_service_impl {
         let client_id = Uuid::new_v4();
         trace!("[Client {}] Start (WinPipe).", client_id);
 
-        // Блок async для обработки ошибок чтения/парсинга и возврата Result<Command, CoreError>
         let command_result: Result<Command, CoreError> = async {
-            // --- Чтение заголовка размера (4 байта, Big Endian) ---
             let mut size_buf = [0u8; 4];
             if let Err(e) = pipe.read_exact(&mut size_buf).await {
-                // Ошибка чтения заголовка размера
                 let err_msg = format!("Pipe read size header error: {}", e);
                 error!("[Client {}] {}", client_id, err_msg);
                 return Err(CoreError::IoError(err_msg));
@@ -700,8 +710,7 @@ mod windows_service_impl {
             let command_size = u32::from_be_bytes(size_buf) as usize;
             trace!("[Client {}] Command size header: {}", client_id, command_size);
 
-            // --- Проверка максимального размера ---
-            const MAX_CMD_SIZE: usize = 1 * 1024 * 1024; // 1 MB limit
+            const MAX_CMD_SIZE: usize = 1 * 1024 * 1024;
             if command_size > MAX_CMD_SIZE {
                 let err_msg = format!(
                     "Command size {} exceeds limit {}",
@@ -716,57 +725,44 @@ mod windows_service_impl {
                  return Err(CoreError::InvalidInput(err_msg));
             }
 
-            // --- Чтение тела команды с read_exact (ожидаем command_size байт) ---
-            // (Предполагается, что канал теперь в PipeMode::Byte)
             trace!("[Client {}] Attempting to read command body ({} bytes) using read_exact...", client_id, command_size);
             let mut command_buffer = vec![0u8; command_size];
             if let Err(e) = pipe.read_exact(&mut command_buffer).await {
-                // Ошибка чтения тела команды
                 let err_msg = format!("Pipe read_exact body ({} bytes) error: {}", command_size, e);
                 error!("[Client {}] {}", client_id, err_msg);
-                // Больше не нужно проверять os error 234 здесь, так как ожидаем, что read_exact будет работать в Byte режиме
                 return Err(CoreError::IoError(err_msg));
             }
 
-            // --- Десериализация команды ---
             trace!("[Client {}] Successfully read full command body ({} bytes) using read_exact.", client_id, command_buffer.len());
             match bincode::deserialize(&command_buffer) {
-                Ok(command) => Ok(command), // Успешно десериализовали
+                Ok(command) => Ok(command),
                 Err(e) => {
-                    // Ошибка десериализации
                     let err_msg = format!("Command deserialization error: {}", e);
                     error!("[Client {}] {}", client_id, err_msg);
                     Err(CoreError::DeserializationError(err_msg))
                 }
             }
-        }.await; // Конец async блока для чтения и десериализации
+        }.await;
 
-        // --- Обработка результата команды (command_result) и формирование ответа ---
         let response = match command_result {
              Ok(command) => {
-                // Команда успешно прочитана и десериализована
                 trace!("[Client {}] Received command: {:?}", client_id, command);
-                // Выполняем команду
                 process_command(command, client_id).await
              }
              Err(e) => {
-                // Ошибка произошла на этапе чтения или десериализации
                 error!("[Client {}] Error reading/parsing command: {}", client_id, e);
-                Err(e) // Просто передаем ошибку дальше
+                Err(e)
              }
         };
 
-        // --- Формирование финального ответа (либо результат process_command, либо ошибка) ---
         let final_response = match response {
-            Ok(r) => r, // Успешный ответ от process_command
+            Ok(r) => r,
             Err(e) => {
-                // Ошибка от process_command или ошибка чтения/парсинга
                 error!("[Client {}] Processing error: {}", client_id, e);
-                Response::Error(e) // Преобразуем любую ошибку в Response::Error
+                Response::Error(e)
             }
         };
 
-        // --- Сериализация и отправка ответа клиенту ---
         match bincode::serialize(&final_response) {
             Ok(response_bytes) => {
                 let response_size = response_bytes.len() as u32;
@@ -774,20 +770,17 @@ mod windows_service_impl {
                     "[Client {}] Sending response ({} bytes): {:?}",
                     client_id,
                     response_size,
-                    final_response // Логируем сам ответ для отладки
+                    final_response
                 );
 
-                // Отправляем размер ответа (4 байта, Big Endian)
                 if let Err(e) = pipe.write_all(&response_size.to_be_bytes()).await {
                     error!("[Client {}] Pipe write response size error: {}", client_id, e);
                 } else {
-                    // Отправляем тело ответа
                     if let Err(e) = pipe.write_all(&response_bytes).await {
                         error!("[Client {}] Pipe write response body error: {}", client_id, e);
                     } else {
-                        // Пытаемся сбросить буферы
                         if let Err(e) = pipe.flush().await {
-                             warn!("[Client {}] Pipe flush error: {}", client_id, e); // Не критично, но стоит залогировать
+                             warn!("[Client {}] Pipe flush error: {}", client_id, e);
                         } else {
                             trace!("[Client {}] Response sent successfully.", client_id);
                         }
@@ -795,23 +788,18 @@ mod windows_service_impl {
                 }
             }
             Err(e) => {
-                // Ошибка сериализации ответа! Отправляем клиенту базовую ошибку.
                 error!("[Client {}] Failed to serialize final response: {}", client_id, e);
                 let error_resp = Response::Error(CoreError::SerializationError(format!("Failed to serialize service response: {}", e)));
                  if let Ok(error_bytes) = bincode::serialize(&error_resp) {
                      let error_size = error_bytes.len() as u32;
-                     // Отправляем размер ошибки
                      if pipe.write_all(&error_size.to_be_bytes()).await.is_ok() {
-                        // Отправляем тело ошибки (если запись размера удалась)
                          let _ = pipe.write_all(&error_bytes).await;
-                         let _ = pipe.flush().await; // Пытаемся отправить
+                         let _ = pipe.flush().await;
                      }
                  }
-                 // Если даже отправка ошибки не удалась, просто логируем выше и завершаем.
             }
         }
 
-        // Закрытие соединения происходит автоматически при выходе из функции (когда pipe выходит из области видимости)
         trace!("[Client {}] Finish (WinPipe).", client_id);
     }
 
@@ -879,7 +867,7 @@ mod unix_daemon_impl {
 
         save_state();
 
-        info!("Stopping servers...");
+        info!("Stopping server...");
         let ids: Vec<String> = match RUNNING_SERVERS.lock() {
             Ok(g) => g.keys().cloned().collect(),
             Err(_) => {
@@ -905,7 +893,7 @@ mod unix_daemon_impl {
             }
             info!("Servers stopped.");
         } else {
-            info!("No servers to stop.");
+            info!("No server to stop.");
         }
 
         let sp = get_socket_path();

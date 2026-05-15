@@ -1,8 +1,8 @@
-use log::{debug, trace, info};
+use log::{debug, trace};
 use crate::language::ast::AstNode;
-use crate::language::error::{Result, Error, ErrorKind};
+use crate::language::error::Result;
 use crate::interpreter_error;
-use super::{Interpreter, ErrorHandler, Configuration};
+use super::{Interpreter, ErrorHandler};
 
 pub struct Executor {}
 
@@ -14,7 +14,7 @@ impl Executor {
     pub fn execute_ast(&self, ast: &AstNode, interpreter: &mut Interpreter) -> Result<()> {
         match ast {
             AstNode::Program(statements) => {
-                debug!("Интерпретация Program с {} стейтментами", statements.len());
+                debug!("Interpreting Program with {} statements", statements.len());
 
                 for stmt in statements {
                     if let AstNode::Import { path, alias } = &**stmt {
@@ -31,13 +31,13 @@ impl Executor {
                 Ok(())
             },
             AstNode::ServerConfig { routes, tls_config, global_error_handler, config_block } => {
-                debug!("Интерпретация ServerConfig с {} маршрутами", routes.len());
+                debug!("Interpreting ServerConfig with {} routes", routes.len());
 
                 if let Some(tls_node) = tls_config {
                     if let AstNode::TlsConfig { enabled, cert_path, key_path } = &**tls_node {
                         interpreter.set_tls_config(*enabled, cert_path.clone(), key_path.clone());
                     } else {
-                        return interpreter_error!("Ожидался узел TlsConfig внутри ServerConfig");
+                        return interpreter_error!("Expected TlsConfig node in ServerConfig");
                     }
                 }
 
@@ -46,7 +46,7 @@ impl Executor {
                         let actions = self.convert_ast_to_actions(body)?;
                         interpreter.set_global_error_handler(error_var.clone(), actions);
                     } else {
-                        return interpreter_error!("Ожидался узел GlobalErrorHandler внутри ServerConfig");
+                        return interpreter_error!("Expected GlobalErrorHandler node in ServerConfig");
                     }
                 }
 
@@ -54,7 +54,7 @@ impl Executor {
                     if let AstNode::ConfigBlock { config_type, host, port } = &**config_node {
                         interpreter.set_configuration(config_type.clone(), host.clone(), port.clone());
                     } else {
-                        return interpreter_error!("Ожидался узел ConfigBlock внутри ServerConfig");
+                        return interpreter_error!("Expected ConfigBlock node in ServerConfig");
                     }
                 }
 
@@ -72,14 +72,14 @@ impl Executor {
 
                 Ok(())
             },
-            _ => interpreter_error!(format!("Ожидается Program или ServerConfig на верхнем уровне, получено: {:?}", ast)),
+            _ => interpreter_error!(format!("Expected Program or ServerConfig on upper level, found: {:?}", ast)),
         }
     }
 
     fn execute_node(&self, node: &Box<AstNode>, interpreter: &mut Interpreter) -> Result<()> {
         match &**node {
             AstNode::Route { path, method, body, on_error } => {
-                trace!("Интерпретация маршрута: {} {}", method, path);
+                trace!("Interpreting route: {} {}", method, path);
 
                 let actions = self.convert_ast_to_actions(body)?;
 
@@ -92,7 +92,7 @@ impl Executor {
                                 actions: err_actions,
                             })
                         },
-                        _ => return interpreter_error!("Ожидается ErrorHandlerBlock для маршрута"),
+                        _ => return interpreter_error!("Expected ErrorHandlerBlock for route"),
                     }
                 } else {
                     None
@@ -103,7 +103,7 @@ impl Executor {
                 Ok(())
             },
             AstNode::Import { .. } => Ok(()),
-            _ => interpreter_error!(format!("Неожиданный тип узла в основном цикле обработки: {:?}", node)),
+            _ => interpreter_error!(format!("Unexpected type of node in main loop of execution: {:?}", node)),
         }
     }
 

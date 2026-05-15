@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use servers::http_core::TlsConfig;
+use servers::TlsConfig;
 use std::collections::HashMap;
 use std::error::Error as StdError;
 use std::fmt;
@@ -9,6 +9,7 @@ use crate::language::Interpreter;
 
 pub mod language;
 pub mod servers;
+mod utils;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum Command {
@@ -104,6 +105,11 @@ pub enum CoreExecutionResult {
         interpreter: Interpreter,
         tls_config: Option<TlsConfig>,
     },
+}
+
+pub fn init_backend() {
+    rustls::crypto::ring::default_provider().install_default()
+        .expect("Failed to install rustls crypto provider!");
 }
 
 pub async fn execute_core_command(command: Command) -> CoreExecutionResult {
