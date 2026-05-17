@@ -6,14 +6,12 @@ pub mod builtin;
 
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::Arc;
-use std::sync::LazyLock;
-use std::sync::Mutex;
+use netter_sdk::Object;
+use std::sync::OnceLock;
 use log::{debug, info, warn};
 use crate::language::ast::AstNode;
 use crate::language::error::Result;
 use crate::interpreter_error;
-use crate::language::rdl_types::RDLTypes;
 use crate::servers::TlsConfig;
 use executor::Executor;
 use route_handler::RouteHandler;
@@ -22,17 +20,7 @@ use builtin::response::Response;
 use builtin::request::Request;
 use builtin::request::HttpBodyVariant;
 
-pub(crate) static OBJECT_REGISTRY: LazyLock<Mutex<ObjectRegister>> = LazyLock::new(|| Mutex::new(ObjectRegister::new()));
-
-pub trait Object: 'static + Send + Sync{
-    fn name(&self) -> &'static str;
-    fn methods(&self) -> Vec<&str>;
-    fn properties(&self) -> Vec<&str>;
-    fn method_exist(&self, name: &str) -> bool;
-    fn call_method(&mut self, name: &str, args: Vec<RDLTypes>) -> Result<RDLTypes>;
-    fn property_exist(&self, name: &str) -> bool;
-    fn get_property(&self, name: &str) -> RDLTypes;
-}
+pub(crate) static OBJECT_REGISTRY: OnceLock<ObjectRegister> = OnceLock::new();
 
 pub struct ObjectRegister {
     objects: Vec<Box<dyn Object>>,

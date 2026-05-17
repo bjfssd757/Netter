@@ -1,8 +1,8 @@
 use log::{debug, error, trace, warn};
+use netter_sdk::RDLTypes;
 use crate::language::ast::AstNode;
 use crate::language::error::{Result, Error, ErrorKind};
 use crate::language::interpreter::evaluator::Evaluator;
-use crate::language::rdl_types::RDLTypes;
 use crate::runtime_error;
 use super::context::ExecutionContext;
 use super::builtin::request::Request;
@@ -230,7 +230,7 @@ impl RouteHandler {
                     let right_value = evaluator.evaluate(right)?;
 
                     if let Some(current_value) = con.get_variable(&var_name.clone().into()) {
-                        if let (Ok(left_num), Ok(right_num)) = (current_value.clone().try_into() as Result<i64>, right_value.clone().try_into() as Result<i64>) {
+                        if let (Ok(left_num), Ok(right_num)) = (current_value.as_i64(), right_value.as_i64()) {
                             let new_value = (left_num + right_num).to_string();
                             trace!("Обновление переменной '{}' += {} -> {}", var_name, right_value, new_value);
                             con.set_variable(&var_name.clone().into(), new_value.into());
@@ -253,15 +253,15 @@ impl RouteHandler {
                 if let AstNode::Identifier(var_name) = &**left {
                     let right_value = evaluator.evaluate(right)?;
 
-                    if let Some(current_value) = con.get_variable(&var_name.clone().into()) {
-                        let left_num = (current_value.clone().try_into() as Result<i64>)
+                    if let Some(current_value) = con.get_variable(&RDLTypes::String(var_name.clone())) {
+                        let left_num = current_value.as_i64()
                             .map_err(|_| Error {
                                 kind: ErrorKind::Runtime,
                                 message: format!("Невозможно преобразовать '{}' в число для вычитания", current_value),
                                 line: None,
                                 column: None,
                             })?;
-                        let right_num = (right_value.clone().try_into() as Result<i64>)
+                        let right_num = right_value.as_i64()
                             .map_err(|_| Error {
                                 kind: ErrorKind::Runtime,
                                 message: format!("Невозможно преобразовать '{}' в число для вычитания", right_value),
@@ -287,14 +287,14 @@ impl RouteHandler {
                     let right_value = evaluator.evaluate(right)?;
 
                     if let Some(current_value) = con.get_variable(&var_name.clone().into()) {
-                        let left_num = (current_value.clone().try_into() as Result<i64>)
+                        let left_num = current_value.as_i64()
                             .map_err(|_| Error {
                                 kind: ErrorKind::Runtime,
                                 message: format!("Невозможно преобразовать '{}' в число для умножения", current_value),
                                 line: None,
                                 column: None,
                             })?;
-                        let right_num = (right_value.clone().try_into() as Result<i64>)
+                        let right_num = right_value.as_i64()
                             .map_err(|_| Error {
                                 kind: ErrorKind::Runtime,
                                 message: format!("Невозможно преобразовать '{}' в число для умножения", right_value),
@@ -319,15 +319,15 @@ impl RouteHandler {
                 if let AstNode::Identifier(var_name) = &**left {
                     let right_value = evaluator.evaluate(right)?;
 
-                    if let Some(current_value) = con.get_variable(&var_name.clone().into()) {
-                        let left_num = (current_value.clone().try_into() as Result<i64>)
+                    if let Some(current_value) = con.get_variable(&RDLTypes::String(var_name.clone())) {
+                        let left_num = current_value.as_i64()
                             .map_err(|_| Error {
                                 kind: ErrorKind::Runtime,
                                 message: format!("Невозможно преобразовать '{}' в число для деления", current_value),
                                 line: None,
                                 column: None,
                             })?;
-                        let right_num = (right_value.clone().try_into() as Result<i64>)
+                        let right_num = right_value.as_i64()
                             .map_err(|_| Error {
                                 kind: ErrorKind::Runtime,
                                 message: format!("Невозможно преобразовать '{}' в число для деления", right_value),
@@ -335,7 +335,7 @@ impl RouteHandler {
                                 column: None,
                             })?;
 
-                        if right_num == (RDLTypes::Number(0).try_into() as Result<i64>)? {
+                        if right_num == 0 {
                             return runtime_error!("Деление на ноль");
                         }
 
@@ -357,14 +357,14 @@ impl RouteHandler {
                     let right_value = evaluator.evaluate(right)?;
 
                     if let Some(current_value) = con.get_variable(&var_name.clone().into()) {
-                        let left_num = (current_value.clone().try_into() as Result<i64>)
+                        let left_num = current_value.as_i64()
                             .map_err(|_| Error {
                                 kind: ErrorKind::Runtime,
                                 message: format!("Невозможно преобразовать '{}' в число для возведения в степень", current_value),
                                 line: None,
                                 column: None,
                             })?;
-                        let right_num = (right_value.clone().try_into() as Result<i64>)
+                        let right_num = right_value.as_i64()
                             .map_err(|_| Error {
                                 kind: ErrorKind::Runtime,
                                 message: format!("Невозможно преобразовать '{}' в число для возведения в степень", right_value),

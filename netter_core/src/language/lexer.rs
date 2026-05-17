@@ -1,4 +1,5 @@
-use super::rdl_types::RDLTypes;
+// use super::rdl_types::RDLTypes;
+use netter_sdk::RDLTypes;
 use crate::language::token::{Token, TokenType};
 use crate::language::error::{Result, Error, ErrorKind};
 use crate::lexer_error;
@@ -119,7 +120,7 @@ impl Lexer {
                         }
                     }
                 } else {
-                    return lexer_error!("Неожиданный конец файла после символа '\\' в строке", self.line, self.column);
+                    return lexer_error!("Unexpected end of file after '\\' character in string", self.line, self.column);
                 }
             } else {
                 string.push(ch);
@@ -127,7 +128,7 @@ impl Lexer {
             }
         }
 
-        lexer_error!("Строка не закрыта", self.line, self.column)
+        lexer_error!("String not closed", self.line, self.column)
     }
 
     pub fn read_comment(&mut self) -> Result<RDLTypes> {
@@ -235,6 +236,15 @@ impl Lexer {
                     self.consume();
                     Ok(Token { token_type: TokenType::Comma, line, column })
                 },
+                '$' => {
+                    self.consume();
+                    if self.peek() == Some('{') {
+                        self.consume();
+                        Ok(Token { token_type: TokenType::Formatting, line, column })
+                    } else {
+                        lexer_error!(format!("Unexpected character: '{}'. If you want to use formatting, you should write '{{' after '$'", ch), line, column)
+                    }
+                }
                 '=' => {
                     self.consume();
                     if self.peek() == Some('=') {
@@ -246,13 +256,13 @@ impl Lexer {
                 },
                 '"' => {
                     match self.read_string() {
-                        Ok(s) => Ok(Token { token_type: TokenType::String(s.try_into()?), line, column }),
+                        Ok(s) => Ok(Token { token_type: TokenType::String(s.to_string()), line, column }),
                         Err(e) => Err(e),
                     }
                 },
                 '0'..='9' => {
                     let number = self.read_number()?;
-                    Ok(Token { token_type: TokenType::Number(number.try_into()?), line, column })
+                    Ok(Token { token_type: TokenType::Number(number.as_i64()?), line, column })
                 }
                 '/' => {
                     self.consume();
@@ -264,7 +274,7 @@ impl Lexer {
                         Ok(Token { token_type: TokenType::DivideEqual, line, column })
                     } else {
                         match self.read_comment() {
-                            Ok(comment) => Ok(Token { token_type: TokenType::Comment(comment.try_into()?), line, column }),
+                            Ok(comment) => Ok(Token { token_type: TokenType::Comment(comment.to_string()), line, column }),
                             Err(e) => Err(e),
                         }
                     }
@@ -367,6 +377,7 @@ impl Lexer {
                         "host" => Ok(Token { token_type: TokenType::Host, line, column }),
                         "port" => Ok(Token { token_type: TokenType::Port, line, column }),
                         "import" => Ok(Token { token_type: TokenType::Import, line, column }),
+                        "localization" => Ok(Token { token_type: TokenType::Localization, line, column }),
                         "as" => Ok(Token { token_type: TokenType::As, line, column }),
                         "for" => Ok(Token { token_type: TokenType::For, line, column }),
                         "while" => Ok(Token { token_type: TokenType::While, line, column }),
@@ -377,7 +388,7 @@ impl Lexer {
                     }
                 },
 
-                _ => lexer_error!(format!("Unexpected symbol: '{}'", ch), line, column),
+                _ => lexer_error!(format!("Unexpected character: '{}'", ch), line, column),
             }
         } else {
             Ok(Token { token_type: TokenType::EOF, line, column })

@@ -16,6 +16,28 @@ pub struct Error {
     pub column: Option<usize>,
 }
 
+impl From<String> for Error {
+    fn from(value: String) -> Self {
+        Self {
+            kind: ErrorKind::Runtime,
+            message: format!("Plugin Execution Error: {value}"),
+            line: None, column: None,
+        }
+    }
+}
+
+impl From<Error> for String {
+    fn from(value: Error) -> Self {
+        value.message
+    }
+}
+
+impl From<&str> for Error {
+    fn from(message: &str) -> Self {
+        Error::from(message.to_string())
+    }
+}
+
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match (&self.line, &self.column) {

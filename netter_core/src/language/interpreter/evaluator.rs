@@ -1,14 +1,12 @@
-use log::{trace, debug, error, info};
+use log::{trace, error, info};
+use netter_sdk::RDLTypes;
 use crate::language::ast::AstNode;
 use crate::language::error::{Result, Error, ErrorKind};
 use crate::language::interpreter::OBJECT_REGISTRY;
-use crate::language::interpreter::builtin::filesystem::FileSystem;
-use crate::language::rdl_types::RDLTypes;
 use crate::runtime_error;
 use super::context::ExecutionContext;
 use super::builtin::request::Request;
 use super::builtin::response::Response;
-use super::builtin::database::Database;
 use super::builtin::plugin::PluginManager;
 
 pub struct Evaluator<'a> {
@@ -34,9 +32,17 @@ impl<'a> Evaluator<'a> {
     }
 
     pub fn evaluate(&mut self, expr: &AstNode) -> Result<RDLTypes> {
-        trace!("Вычисление выражения: {:?}", expr);
+        trace!("Evaluating expression: {:?}", expr);
         match expr {
             AstNode::StringLiteral(value) => Ok(RDLTypes::String(value.clone())),
+            AstNode::FormattedString(parts) => {
+                let mut result = String::new();
+                for part in parts {
+                    let val = self.evaluate(part)?;
+                    result.push_str(&val.to_string())
+                }
+                Ok(RDLTypes::String(result))
+            }
             AstNode::NumberLiteral(value) => Ok(RDLTypes::Number(*value)),
             AstNode::Identifier(name) => self.evaluate_identifier(&name.clone().into()).map(|s| s.into()),
             AstNode::BinaryOp { left, operator, right } =>
@@ -47,7 +53,7 @@ impl<'a> Evaluator<'a> {
                 self.evaluate_property_access(object, property),
             AstNode::ArrayLiteral(elements) => self.evaluate_array_literal(elements),
             AstNode::ArrayAccess { array, index } => self.evaluate_array_access(array, index),
-            _ => runtime_error!(format!("Неподдерживаемый тип выражения: {:?}", expr)),
+            _ => runtime_error!(format!("Unsupported expression: {:?}", expr)),
         }
     }
 
@@ -69,7 +75,7 @@ impl<'a> Evaluator<'a> {
                     }
                 }
                 Err(_) => {
-                    values.push(serde_json::Value::String(value.try_into()?));
+                    values.push(serde_json::Value::String(value.to_string()));
                 }
             }
         }
@@ -93,7 +99,7 @@ impl<'a> Evaluator<'a> {
             column: None,
         })?;
 
-        let i = index_value.clone().try_into() as Result<usize>;
+        let i = index_value.as_u64().map(|n| n as usize);
         let index_num = i.map_err(|_| Error {
             kind: ErrorKind::Runtime,
             message: format!("Индекс '{}' должен быть числом", index_value),
@@ -137,7 +143,7 @@ impl<'a> Evaluator<'a> {
             "==" => Ok(RDLTypes::String((left_value == right_value).to_string())),
             "!=" => Ok(RDLTypes::String((left_value != right_value).to_string())),
             "+" => {
-                if let (Ok(left_num), Ok(right_num)) = (left_value.clone().try_into() as Result<i64>, right_value.clone().try_into() as Result<i64>) {
+                if let (Ok(left_num), Ok(right_num)) = (left_value.clone().as_i64(), right_value.clone().as_i64()) {
                     let result = left_num + right_num;
                     Ok(RDLTypes::Number(result))
                 } else {
@@ -145,67 +151,67 @@ impl<'a> Evaluator<'a> {
                 }
             },
             "-" => {
-                let left_num: i64 = left_value.clone().try_into()
+                let left_num: i64 = left_value.as_i64()
                     .map_err(|_|
                         Error {
                             kind: ErrorKind::Runtime,
                             line: None,
                             column: None,
                             message: format!("Can't convert '{}' into a number for subtraction", left_value),
-                        }.into()
+                        }
                     )?;
-                let right_num: i64 = right_value.clone().try_into()
+                let right_num: i64 = right_value.as_i64()
                     .map_err(|_|
                         Error {
                             kind: ErrorKind::Runtime,
                             line: None,
                             column: None,
                             message: format!("Can't convert '{}' into a number for subtraction", right_value),
-                        }.into()
+                        }
                     )?;
                 let result = left_num - right_num;
                 Ok(RDLTypes::Number(result))
             },
             "*" => {
-                let left_num: i64 = left_value.clone().try_into()
+                let left_num: i64 = left_value.as_i64()
                     .map_err(|_|
                         Error {
                             kind: ErrorKind::Runtime,
                             line: None,
                             column: None,
                             message: format!("Can't convert '{}' into a number for multiplication", left_value)
-                        }.into()
+                        }
                     )?;
-                let right_num: i64 = right_value.clone().try_into()
+                let right_num: i64 = right_value.as_i64()
                     .map_err(|_|
                         Error {
                             kind: ErrorKind::Runtime,
                             line: None,
                             column: None,
                             message: format!("Can't convert '{}' into a number for multiplication", right_value)
-                        }.into()
+                        }
                     )?;
                 let result = left_num * right_num;
                 Ok(RDLTypes::Number(result))
             },
             "/" => {
-                let left_num: i64 = left_value.clone().try_into()
+                let left_num: i64 = left_value.as_i64()
                     .map_err(|_|
                         Error {
                             kind: ErrorKind::Runtime,
                             line: None,
                             column: None,
                             message: format!("Can't convert '{}' into a number for division", left_value)
-                        }.into()
+                        }
                     )?;
-                let right_num: i64 = right_value.clone().try_into()
+                let right_num: i64 = right_value.as_i64()
                     .map_err(|_|
                         Error {
                             kind: ErrorKind::Runtime,
                             line: None,
                             column: None,
                             message: format!("Can't convert '{}' into a number for division", right_value)
-                        }.into()
+                        }
                     )?;
                 if right_num == 0 {
                     return runtime_error!("Division by zero".to_string());
@@ -215,23 +221,23 @@ impl<'a> Evaluator<'a> {
                 Ok(RDLTypes::Number(result))
             },
             "^" => {
-                let left_num: i64 = left_value.clone().try_into()
+                let left_num: i64 = left_value.as_i64()
                     .map_err(|_|
                         Error {
                             kind: ErrorKind::Runtime,
                             line: None,
                             column: None,
                             message: format!("Can't convert '{}' into a number for raising to a power", left_value)
-                        }.into()
+                        }
                     )?;
-                let right_num: i64 = right_value.clone().try_into()
+                let right_num: i64 = right_value.as_i64()
                     .map_err(|_|
                         Error {
                             kind: ErrorKind::Runtime,
                             line: None,
                             column: None,
                             message: format!("Can't convert '{}' into a number for raising to a power", right_value)
-                        }.into()
+                        }
                     )?;
                 if right_num < 0 {
 

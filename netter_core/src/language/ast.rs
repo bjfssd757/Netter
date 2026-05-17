@@ -1,4 +1,4 @@
-use std::fmt;
+use std::fmt::{self, Pointer};
 
 #[derive(Debug, Clone)]
 pub enum AstNode {
@@ -30,6 +30,7 @@ pub enum AstNode {
         then_branch: Box<AstNode>,
         else_branch: Option<Box<AstNode>>,
     },
+    FormattedString(Vec<Box<AstNode>>),
     StringLiteral(String),
     NumberLiteral(i64),
     ArrayLiteral(Vec<Box<AstNode>>),        // [1, "hey", 3]
@@ -88,6 +89,7 @@ pub trait AstVisitor<T> {
     fn visit_program(&mut self, statements: &[Box<AstNode>]) -> Result<T, Self::Error>;
     fn visit_route(&mut self, path: &str, method: &str, body: &AstNode, on_error: Option<&AstNode>) -> Result<T, Self::Error>;
     fn visit_block(&mut self, statements: &[Box<AstNode>]) -> Result<T, Self::Error>;
+    fn visit_formatted_string(&mut self, statements: &[Box<AstNode>]) -> Result<T, Self::Error>;
     fn visit_var_declaration(&mut self, name: &str, value: &AstNode) -> Result<T, Self::Error>;
     fn visit_function_call(&mut self, object: Option<&AstNode>, name: &str, args: &[Box<AstNode>], try_op: bool, unwrap_op: bool) -> Result<T, Self::Error>;
     fn visit_property_access(&mut self, object: &AstNode, property: &str) -> Result<T, Self::Error>;
@@ -115,6 +117,7 @@ impl AstNode {
             AstNode::Route { path, method, body, on_error } =>
                 visitor.visit_route(path, method, body, on_error.as_ref().map(|b| b.as_ref())),
             AstNode::Block(statements) => visitor.visit_block(statements),
+            AstNode::FormattedString(statements) => visitor.visit_formatted_string(statements),
             AstNode::VarDeclaration { name, value } => visitor.visit_var_declaration(name, value),
             AstNode::FunctionCall { object, name, args, try_operator, unwrap_operator } =>
                 visitor.visit_function_call(object.as_ref().map(|o| o.as_ref()), name, args, *try_operator, *unwrap_operator),
@@ -208,6 +211,7 @@ impl fmt::Display for AstNode {
                 }
                 writeln!(f)
             },
+            AstNode::FormattedString(nodes) => nodes.fmt(f),
             AstNode::StringLiteral(value) => write!(f, "\"{}\"", value),
             AstNode::NumberLiteral(value) => write!(f, "{}", value),
             AstNode::ArrayLiteral(value) => write!(f, "[{:?}]", value),

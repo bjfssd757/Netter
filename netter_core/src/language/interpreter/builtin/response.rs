@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use crate::{language::{interpreter::Object, rdl_types::RDLTypes}, runtime_error};
+use netter_sdk::{RDLTypes, Object};
 
 #[derive(Debug, Clone)]
 pub struct Response {
@@ -18,11 +18,11 @@ impl Object for Response {
         vec!["set_header", "body", "send", "status"]
     }
 
-    fn call_method(&mut self, name: &str, args: Vec<RDLTypes>) -> crate::language::Result<RDLTypes> {
+    fn call_method(&mut self, name: &str, args: Vec<RDLTypes>) -> Result<RDLTypes, String> {
         match name {
             "set_header" => {
                 if args.len() < 2 {
-                    return runtime_error!("Method Response.set_header required 2 argument");
+                    return Err("Method Response.set_header required 2 argument".to_string());
                 }
 
                 self.set_header(&args[0], &args[1]);
@@ -30,7 +30,7 @@ impl Object for Response {
             }
             "body" => {
                 if args.len() < 1 {
-                    return runtime_error!("Method Response.body required 1 argument");
+                    return Err("Method Response.body required 1 argument".to_string());
                 }
 
                 self.body(args[0].to_string());
@@ -42,19 +42,19 @@ impl Object for Response {
             }
             "status" => {
                 if args.len() < 1 {
-                    return runtime_error!("Method Response.status required 1 argument");
+                    return Err("Method Response.status required 1 argument".to_string());
                 }
 
                 let status: u16 = (&args[0]).into();
 
                 if !(100..=599).contains(&status) {
-                    return runtime_error!(format!("Incorrect status code: {}", status));
+                    return Err(format!("Incorrect status code: {}", status));
                 }
 
                 self.status(status);
                 Ok(RDLTypes::Boolean(true))
             },
-            _ => runtime_error!(format!("Function with name '{}' not found in Response object", name))
+            _ => Err(format!("Function with name '{}' not found in Response object", name))
         }
     }
 

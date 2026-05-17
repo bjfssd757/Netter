@@ -29,4 +29,4 @@ base64 = "0.22.1"
 axum = { version = "0.8.9", features = ["macros"]}
 serde_urlencoded = "0.7.1"
 axum-server = { version = "0.8.0", default-features = false, features = ["tls-rustls-no-provider"] }
-
+netter_sdk = { version = "0.1.0", path = "../netter_sdk" }

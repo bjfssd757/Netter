@@ -1,8 +1,7 @@
 use log::{trace};
-use crate::language::error::{Result};
-use crate::language::rdl_types::RDLTypes;
+use crate::language::error::{Result as CoreResult};
 use crate::runtime_error;
-use super::super::Object;
+use netter_sdk::{RDLTypes, Object};
 
 pub struct Database {}
 
@@ -19,7 +18,7 @@ impl Object for Database {
         Vec::new()
     }
 
-    fn call_method(&mut self, name: &str, args: Vec<RDLTypes>) -> Result<RDLTypes> {
+    fn call_method(&mut self, name: &str, args: Vec<RDLTypes>) -> Result<RDLTypes, String> {
         match name {
             "get_all" => Ok(Database::get_all()?),
             "check" => Ok(Database::check().unwrap_or(false).into()),
@@ -28,7 +27,7 @@ impl Object for Database {
                 Database::add(&args[0], &args[1], &args[2])?;
                 return Ok(RDLTypes::Boolean(true));
             }
-            _ => runtime_error!(format!("Function with name '{}' not found in Database object", name))
+            _ => Err(format!("Function with name '{}' not found in Database object", name))
         }
     }
 
@@ -46,17 +45,17 @@ impl Object for Database {
 }
 
 impl Database {
-    pub fn get_all() -> Result<RDLTypes> {
+    pub fn get_all() -> CoreResult<RDLTypes> {
         // Заглушка
         Ok(r#"[{"id": 1, "name": "User1"}, {"id": 2, "name": "User2"}]"#.into())
     }
     
-    pub fn check() -> Result<bool> {
+    pub fn check() -> CoreResult<bool> {
         // Заглушка
         Ok(true)
     }
 
-    pub fn get(user_id: &RDLTypes) -> Result<RDLTypes> {
+    pub fn get(user_id: &RDLTypes) -> CoreResult<RDLTypes> {
         if user_id == &RDLTypes::Number(0) {
             runtime_error!(format!("Пользователь с id={} не найден", user_id))
         } else {
@@ -64,7 +63,7 @@ impl Database {
         }
     }
 
-    pub fn add(user_id: &RDLTypes, name: &RDLTypes, password_hash: &RDLTypes) -> Result<()> {
+    pub fn add(user_id: &RDLTypes, name: &RDLTypes, password_hash: &RDLTypes) -> CoreResult<()> {
         trace!(
             "Добавлен пользователь: id={}, name={}, password_hash={}",
             user_id, name, password_hash

@@ -1,10 +1,8 @@
 use std::fs;
 use std::path::Path;
 use log::trace;
-use crate::language::error::{Result, Error, ErrorKind};
-use crate::language::interpreter::Object;
-use crate::language::rdl_types::RDLTypes;
-use crate::runtime_error;
+use crate::language::error::{Result as CoreResult, Error, ErrorKind};
+use netter_sdk::{RDLTypes, Object};
 
 pub struct FileSystem {}
 
@@ -17,25 +15,25 @@ impl Object for FileSystem {
         vec!["exists", "read_text", "write_text", "is_directory", "list_files"]
     }
 
-    fn call_method(&mut self, name: &str, args: Vec<RDLTypes>) -> Result<RDLTypes> {
+    fn call_method(&mut self, name: &str, args: Vec<RDLTypes>) -> Result<RDLTypes, String> {
         match name {
             "exists" => {
                 if args.len() < 1 {
-                    return runtime_error!(format!("Method FileSystem.exists required 1 argument"));
+                    return Err(format!("Method FileSystem.exists required 1 argument"));
                 }
 
-                FileSystem::exists(&args[0]).map(|v| v.into())
+                Ok(FileSystem::exists(&args[0]).map(|v| v.into())?)
             }
             "read_text" => {
                 if args.len() < 1 {
-                    return runtime_error!(format!("Method FileSystem.read_text required 1 argument"));
+                    return Err(format!("Method FileSystem.read_text required 1 argument"));
                 }
 
-                FileSystem::read_text(&args[0])
+                Ok(FileSystem::read_text(&args[0])?)
             }
             "write_text" => {
                 if args.len() < 2 {
-                    return runtime_error!(format!("Method FileSystem.write_text required 2 argument"));
+                    return Err(format!("Method FileSystem.write_text required 2 argument"));
                 }
 
                 FileSystem::write_text(&args[0], &args[1])?;
@@ -43,19 +41,19 @@ impl Object for FileSystem {
             }
             "is_directory" => {
                 if args.len() < 1 {
-                    return runtime_error!(format!("Method FileSystem.is_directory required 1 argument"));
+                    return Err(format!("Method FileSystem.is_directory required 1 argument"));
                 }
 
-                FileSystem::is_directory(&args[0]).map(|v| v.into())
+                Ok(FileSystem::is_directory(&args[0]).map(|v| v.into())?)
             }
             "list_files" => {
                 if args.len() < 1 {
-                    return runtime_error!(format!("Method FileSystem.list_files required 1 argument"));
+                    return Err(format!("Method FileSystem.list_files required 1 argument"));
                 }
 
-                FileSystem::list_files(&args[0])
+                Ok(FileSystem::list_files(&args[0])?)
             },
-            _ => runtime_error!(format!("Function with name '{}' not found in FileSystem object", name))
+            _ => Err(format!("Function with name '{}' not found in FileSystem object", name))
         }
     }
 
@@ -77,12 +75,12 @@ impl Object for FileSystem {
 }
 
 impl FileSystem {
-    pub fn exists(path: &RDLTypes) -> Result<bool> {
+    pub fn exists(path: &RDLTypes) -> CoreResult<bool> {
         trace!("Проверка существования файла: {}", path);
         Ok(Path::new(path.to_string().as_str()).exists())
     }
 
-    pub fn read_text(path: &RDLTypes) -> Result<RDLTypes> {
+    pub fn read_text(path: &RDLTypes) -> CoreResult<RDLTypes> {
         trace!("Чтение текстового файла: {}", path);
         Ok(RDLTypes::String(fs::read_to_string(path.to_string()).map_err(|e| Error {
             kind: ErrorKind::Runtime,
@@ -92,7 +90,7 @@ impl FileSystem {
         })?))
     }
 
-    pub fn write_text(path: &RDLTypes, content: &RDLTypes) -> Result<()> {
+    pub fn write_text(path: &RDLTypes, content: &RDLTypes) -> CoreResult<()> {
         trace!("Запись в текстовый файл: {}", path);
         fs::write(path.to_string(), content.to_string()).map_err(|e| Error {
             kind: ErrorKind::Runtime,
@@ -102,12 +100,12 @@ impl FileSystem {
         })
     }
 
-    pub fn is_directory(path: &RDLTypes) -> Result<bool> {
+    pub fn is_directory(path: &RDLTypes) -> CoreResult<bool> {
         trace!("Проверка директории: {}", path);
         Ok(Path::new(path.to_string().as_str()).is_dir())
     }
 
-    pub fn list_files(dir_path: &RDLTypes) -> Result<RDLTypes> {
+    pub fn list_files(dir_path: &RDLTypes) -> CoreResult<RDLTypes> {
         trace!("Получение списка файлов: {}", dir_path);
         
         let dir = dir_path.to_string();

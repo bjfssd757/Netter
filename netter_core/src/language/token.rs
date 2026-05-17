@@ -17,6 +17,7 @@ pub enum TokenType {
     // -------- //
     Identifier(String), // Идентификаторы
     HttpMethod(String), // GET, POST ...
+    Formatting,         // ${
     LBrace,             // {
     RBrace,             // }
     LParen,             // (
@@ -48,6 +49,7 @@ pub enum TokenType {
     TypeName,           // type
     Host,               // host
     Port,               // port
+    Localization,       // localization
     // -------- //
     Concatenation,      // +
     PlusEqual,          // +=
@@ -85,6 +87,7 @@ impl fmt::Display for Token {
             TokenType::Number(n) => write!(f, "{}", n),
             TokenType::Identifier(id) => write!(f, "{}", id),
             TokenType::HttpMethod(method) => write!(f, "{}", method),
+            TokenType::Formatting => write!(f, "${{"),
             TokenType::LBrace => write!(f, "{{"),
             TokenType::RBrace => write!(f, "}}"),
             TokenType::LParen => write!(f, "("),
@@ -114,6 +117,7 @@ impl fmt::Display for Token {
             TokenType::Concatenation => write!(f, "+"),
             TokenType::PlusEqual => write!(f, "+="),
             TokenType::Import => write!(f, "import"),
+            TokenType::Localization => write!(f, "localization"),
             TokenType::As => write!(f, "as"),
             TokenType::DoubleColon => write!(f, "::"),
             TokenType::For => write!(f, "for"),

@@ -470,6 +470,11 @@ use super::*;
         shutdown_rx: mpsc::Receiver<()>,
     ) -> WindowsServiceResult<()> {
         info!("Initializing service logic...");
+
+        info!("Initializing netter_core backend...");
+        netter_core::init_backend();
+        info!("Backend initialized successfully!");
+
         let (err_tx_async, err_rx_async) =
             tokio_mpsc::channel::<Box<dyn StdError + Send + Sync>>(10);
         let status_handle = match service_control_handler::register(SERVICE_NAME, move |ev| match ev

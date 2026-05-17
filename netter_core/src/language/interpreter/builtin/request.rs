@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use base64::Engine;
-use crate::{language::{interpreter::Object, rdl_types::RDLTypes}, runtime_error};
+use netter_sdk::{RDLTypes, Object};
 
 #[derive(Debug, Clone)]
 pub enum HttpBodyVariant {
@@ -28,18 +28,18 @@ impl Object for Request {
         ]
     }
 
-    fn call_method(&mut self, name: &str, args: Vec<RDLTypes>) -> crate::language::Result<RDLTypes> {
+    fn call_method(&mut self, name: &str, args: Vec<RDLTypes>) -> Result<RDLTypes, String> {
         match name {
             "get_param" => {
                 if args.len() < 1 {
-                    return runtime_error!(format!("Method Request.get_param required 1 argument"));
+                    return Err(format!("Method Request.get_param required 1 argument"));
                 }
 
                 Ok(self.get_param(&args[0]))
             }
             "get_header" => {
                 if args.len() < 1 {
-                    return runtime_error!(format!("Method Request.get_header required 1 argument"));
+                    return Err(format!("Method Request.get_header required 1 argument"));
                 }
 
                 Ok(self.get_header(&args[0]))
@@ -47,7 +47,7 @@ impl Object for Request {
             "body" | "text_body" => Ok(self.get_body()),
             "body_base64" => Ok(self.get_body_as_base64()),
             "is_binary" => Ok(self.is_body_binary().into()),
-            _ => runtime_error!(format!("Function with name '{}' not found in Request object", name))
+            _ => Err(format!("Function with name '{}' not found in Request object", name))
         }
     }
 

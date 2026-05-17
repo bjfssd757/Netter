@@ -1,11 +1,11 @@
 #![allow(dead_code)]
 
 use std::collections::HashMap;
-use crate::language::rdl_types::RDLTypes;
+use netter_sdk::{Object, RDLTypes};
 
-#[derive(Debug, Clone)]
 pub struct ExecutionContext {
     variables: HashMap<RDLTypes, RDLTypes>,
+    objects: Vec<Box<dyn Object>>,
     parent: Option<Box<ExecutionContext>>,
 }
 
@@ -13,6 +13,7 @@ impl ExecutionContext {
     pub fn new() -> Self {
         ExecutionContext {
             variables: HashMap::new(),
+            objects: Vec::new(),
             parent: None,
         }
     }
@@ -20,8 +21,29 @@ impl ExecutionContext {
     pub fn with_parent(parent: ExecutionContext) -> Self {
         ExecutionContext {
             variables: HashMap::new(),
+            objects: Vec::new(),
             parent: Some(Box::new(parent)),
         }
+    }
+
+    pub fn add_object(&mut self, object: Box<impl Object>) {
+        self.objects.push(object);
+    }
+
+    pub fn get_object(&mut self, name: &RDLTypes) -> Option<&dyn Object> {
+        self.objects.iter()
+            .find(|o| o.name() == name.to_string())
+            .map(|obj| obj.as_ref())
+    }
+
+    pub fn has_object(&self, name: &RDLTypes) -> bool {
+        self.objects.iter()
+            .find(|o| o.name() == name.to_string())
+            .is_some()
+    }
+
+    pub fn get_objects(&self) -> Vec<&dyn Object> {
+        self.objects.iter().map(|o| o.as_ref()).collect()
     }
 
     pub fn set_variable(&mut self, name: &RDLTypes, value: RDLTypes) {

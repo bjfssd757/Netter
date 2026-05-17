@@ -3,3 +3,4 @@ pub mod request;
 pub mod response;
 pub mod plugin;
 pub mod filesystem;
+pub mod localization;

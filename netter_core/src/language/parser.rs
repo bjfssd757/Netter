@@ -30,7 +30,7 @@ impl Parser {
                 if tls_config.is_some() {
                     return Err(Error {
                         kind: ErrorKind::Parser,
-                        message: "Дублирование TLS конфигурации".to_string(),
+                        message: "TLS configuration duplication".to_string(),
                         line: Some(self.peek().line),
                         column: Some(self.peek().column),
                     });
@@ -40,7 +40,7 @@ impl Parser {
                 if global_error_handler.is_some() {
                     return Err(Error {
                         kind: ErrorKind::Parser,
-                        message: "Дублирование глобального обработчика ошибок".to_string(),
+                        message: "Global error handler duplication".to_string(),
                         line: Some(self.peek().line),
                         column: Some(self.peek().column),
                     });
@@ -54,7 +54,7 @@ impl Parser {
                 if config.is_some() {
                     return Err(Error {
                         kind: ErrorKind::Parser,
-                        message: "Дублирование блока 'config'".to_string(),
+                        message: "Config block duplication".to_string(),
                         line: Some(self.peek().line),
                         column: Some(self.peek().column),
                     });
@@ -889,7 +889,12 @@ impl Parser {
                 TokenType::String(s) => s.clone(),
                 _ => return parser_error!("Невозможный случай при парсинге строки", self.previous().line, self.previous().column),
             };
-            Ok(AstNode::StringLiteral(value))
+
+            if value.contains("${") {
+                self.parse_formatted_string(&value)
+            } else {
+                Ok(AstNode::StringLiteral(value))
+            }
         } else if self.match_token(&TokenType::Number(0)) {
             let value = match &self.previous().token_type {
                 TokenType::Number(n) => *n,
@@ -906,6 +911,52 @@ impl Parser {
                 column: Some(self.peek().column),
             })
         }
+    }
+
+    fn parse_formatted_string(&mut self, text: &str) -> Result<AstNode> {
+        let mut parts = Vec::new();
+        let mut current_idx = 0;
+
+        let current_line = self.previous().line;
+        let current_column = self.previous().column;
+
+        while let Some(start_idx) = text[current_idx..].find("${") {
+            let abs_start = current_idx + start_idx;
+
+            if abs_start > current_idx {
+                let text_before = &text[current_idx..abs_start];
+                parts.push(Box::new(AstNode::StringLiteral(text_before.to_string())));
+            }
+
+            let content_start = abs_start + 2;
+            if let Some(end_idx) = text[content_start..].find('}') {
+                let abs_end = content_start + end_idx;
+                let expr_code = &text[content_start..abs_end];
+
+                let mut lexer = Lexer::new(expr_code);
+                let tokens = match lexer.tokenize() {
+                    Ok(t) => t,
+                    Err(e) => return Err(e),
+                };
+
+                let mut sub_parser = Parser::new(tokens);
+
+                let expr_ast = sub_parser.expression()?;
+
+                parts.push(Box::new(expr_ast));
+
+                current_idx = abs_end + 1;
+            } else {
+                return parser_error!("Unclosed '}' in formatted string", current_line, current_column);
+            }
+        }
+
+        if current_idx < text.len() {
+            let remaining_text = &text[current_idx..];
+            parts.push(Box::new(AstNode::StringLiteral(remaining_text.to_string())));
+        }
+
+        Ok(AstNode::FormattedString(parts))
     }
 
     fn parse_array_literal(&mut self) -> Result<AstNode> {

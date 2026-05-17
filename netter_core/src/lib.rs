@@ -4,6 +4,10 @@ use std::collections::HashMap;
 use std::error::Error as StdError;
 use std::fmt;
 use log::{error, info, warn};
+use crate::language::interpreter::OBJECT_REGISTRY;
+use crate::language::interpreter::builtin;
+use crate::language::interpreter::builtin::localization::I18N;
+use crate::language::interpreter::builtin::localization::I18n;
 use crate::language::parse;
 use crate::language::Interpreter;
 
@@ -110,6 +114,10 @@ pub enum CoreExecutionResult {
 pub fn init_backend() {
     rustls::crypto::ring::default_provider().install_default()
         .expect("Failed to install rustls crypto provider!");
+
+    let _ = I18N.get_or_init(||{ 
+        I18n::new()
+    });
 }
 
 pub async fn execute_core_command(command: Command) -> CoreExecutionResult {
