@@ -1,0 +1,24 @@
+[package]
+name = "netter_proto"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = ["cli_client", "supervisor", "vm_server"]
+cli_client = []
+supervisor = []
+vm_server = []
+
+[dependencies]
+prost = "0.14.4"
+prost-types = "0.14.4"
+tonic = { version = "0.14.6", features = ["codegen"] }
+tonic-prost = "0.14.6"
+
+[build-dependencies]
+tonic-prost-build = "0.14.6"
+
+[dev-dependencies]
+tokio = { version = "1.52.3", features = ["full"] }
+tokio-util = "0.7.18"
+tower = "0.5.3"

@@ -14,7 +14,8 @@ members = [
     "netter_service",
     "netter_advanced_plugins",
     "netter_sdk",
-    "cesium_vm"
+    "cesium_vm",
+    "netter_proto"
 ]
 resolver = "2"
 

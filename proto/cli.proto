@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package netter.cli.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/duration.proto";
+import "shared.proto";
+
+/* Cli service \
+These rpc functions are used for CLI communication with the supervisor.
+*/
+service CliService {
+  rpc PingSupervisor (google.protobuf.Empty) returns (google.protobuf.Empty);
+  rpc PingVirtualMachine (google.protobuf.Empty) returns (google.protobuf.Empty);
+  rpc GetInfoAboutServer (GetInfoAboutServerRequest) returns (GetInfoAboutServerResponse);
+  rpc StartServer (shared.v1.StartServerRequest) returns (shared.v1.StartServerResponse);
+  rpc StopServer (shared.v1.StopServerRequest) returns (shared.v1.StopServerResponse);
+  rpc RestartServer (shared.v1.RestartServerRequest) returns (shared.v1.RestartServerResponse);
+}
+
+// ----- GetInfoAboutServer -----
+
+message GetInfoAboutServerRequest {
+  uint32 server_id = 1;
+}
+
+message GetInfoAboutServerResponse {
+  shared.v1.Server server_info = 1;
+}

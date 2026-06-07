@@ -1,0 +1,118 @@
+syntax = "proto3";
+
+package netter.shared.v1;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+enum Protocol {
+  PROTOCOL_HTTP = 0;
+  PROTOCOL_HTTPS = 1;
+}
+
+message Route {
+  string name = 1;
+  bytes bytecode = 2;
+  Protocol protocol = 3;
+}
+
+message TlsConfiguration {
+  // Certificate in PEM format
+  string pem = 1;
+
+  // Private key
+  string key = 2;
+}
+
+// ----- Logging -----
+
+enum LogBackendType {
+  LOG_BACKEND_TYPE_FILE = 0;
+  LOG_BACKEND_TYPE_DATABASE = 1;
+  LOG_BACKEND_TYPE_STDOUT = 2;
+  LOG_BACKEND_TYPE_MEMORY = 3;
+  LOG_BACKEND_TYPE_EVENT_QUEUE = 4;
+}
+
+message FileBackendConfig {
+  string path = 1;
+}
+
+message DatabaseBackendConfig {
+  string connection_string = 1;
+  string table_name = 2;
+}
+
+message StdoutBackendConfig {
+  bool enable_colors = 1;
+}
+
+message MemoryBackendConfig {
+  uint32 max_length = 1;
+}
+
+message EventQueueBackendConfig {
+  string broker_url = 1;
+  string topic = 2;
+}
+
+message LogConfiguration {
+  oneof backend {
+    FileBackendConfig file = 1;
+    DatabaseBackendConfig database = 2;
+    StdoutBackendConfig stdout = 3;
+    MemoryBackendConfig memory = 4;
+    EventQueueBackendConfig queue = 5;
+  }
+}
+
+message Server {
+  uint32 id = 1;
+  string ip = 2;
+  uint32 port = 3;
+  optional TlsConfiguration tls_config = 4;
+  repeated Route routes = 5;
+  google.protobuf.Duration connection_timeout = 6;
+  google.protobuf.Timestamp started_at = 7;
+  uint32 connected_clients = 8;
+  LogConfiguration log_config = 9;
+}
+
+// ----- StartServer -----
+
+message StartServerRequest {
+  shared.v1.Server server = 1;
+}
+
+message StartServerResponse {
+  uint32 server_id = 1;
+}
+
+// ----- StopServer -----
+
+message StopServerRequest {
+  uint32 server_id = 1;
+}
+
+message StopServerResponse {}
+
+// ----- RestartServer -----
+
+message RestartServerRequest {
+  uint32 server_id = 1;
+  optional google.protobuf.Duration wait_before_start = 2;
+}
+
+message RestartServerResponse {
+  uint32 new_server_id = 1;
+}
+
+// ----- GetRuntimeInfo -----
+
+message GetRuntimeInfoRequest {
+  uint32 server_id = 1;
+}
+
+message GetRuntimeInfoResponse {
+  shared.v1.Server server = 1;
+}

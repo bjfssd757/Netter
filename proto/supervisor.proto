@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package netter.supervisor.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/empty.proto";
+
+import "shared.proto";
+
+/* Supervisor service \
+These RPC functions are used for communication between the supervisor and the virtual machine.
+*/
+service SupervisorService {
+  rpc GetRuntimeInfo (shared.v1.GetRuntimeInfoRequest) returns (shared.v1.GetRuntimeInfoResponse);
+  rpc StartServer (shared.v1.StartServerRequest) returns (shared.v1.StartServerResponse);
+  rpc StopServer (shared.v1.StopServerRequest) returns (shared.v1.StopServerResponse);
+  rpc RestartServer (shared.v1.RestartServerRequest) returns (shared.v1.RestartServerResponse);
+  rpc Ping (google.protobuf.Empty) returns (google.protobuf.Empty);
+}
