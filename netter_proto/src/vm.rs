@@ -1,10 +1,12 @@
 use std::net::SocketAddr;
+use std::pin::Pin;
 use std::sync::Arc;
 use tonic::{Request, Response, Status};
 use crate::proto_shared::v1::{GetRuntimeInfoRequest, GetRuntimeInfoResponse, RestartServerRequest, RestartServerResponse, StartServerRequest, StartServerResponse, StopServerRequest, StopServerResponse};
 use crate::proto_supervisor::v1::supervisor_service_server::{SupervisorService, SupervisorServiceServer};
 
-pub type Callback<CTX, Req, Res> = fn(Arc<CTX>, Req) -> Result<Res, Status>;
+pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + Sync + 'a>>;
+pub type Callback<CTX, Req, Res> = fn(Arc<CTX>, Req) -> BoxFuture<'static, Result<Res, Status>>;
 
 pub struct VirtualMachineServer<CTX> {
     ctx: Option<Arc<CTX>>,
@@ -120,7 +122,10 @@ impl<CTX> VirtualMachineServer<CTX> {
 impl<CTX: Send + Sync + 'static> SupervisorService for VirtualMachineServer<CTX> {
     async fn get_runtime_info(&self, request: Request<GetRuntimeInfoRequest>) -> Result<Response<GetRuntimeInfoResponse>, Status> {
         if let (Some(cb), Some(ctx)) = (self.get_runtime_info_callback, &self.ctx) {
-            return match cb(Arc::clone(ctx), request.into_inner()) {
+
+            let future = cb(Arc::clone(ctx), request.into_inner());
+
+            return match future.await {
                 Ok(resp) => Ok(Response::new(resp)),
                 Err(status) => Err(status)
             }
@@ -130,7 +135,10 @@ impl<CTX: Send + Sync + 'static> SupervisorService for VirtualMachineServer<CTX>
 
     async fn start_server(&self, request: Request<StartServerRequest>) -> Result<Response<StartServerResponse>, Status> {
         if let (Some(cb), Some(ctx)) = (self.start_server_callback, &self.ctx) {
-            return match cb(Arc::clone(ctx), request.into_inner()) {
+
+            let future = cb(Arc::clone(ctx), request.into_inner());
+
+            return match future.await {
                 Ok(resp) => Ok(Response::new(resp)),
                 Err(status) => Err(status),
             }
@@ -140,7 +148,10 @@ impl<CTX: Send + Sync + 'static> SupervisorService for VirtualMachineServer<CTX>
 
     async fn stop_server(&self, request: Request<StopServerRequest>) -> Result<Response<StopServerResponse>, Status> {
         if let (Some(cb), Some(ctx)) = (self.stop_server_callback, &self.ctx) {
-            return match cb(Arc::clone(ctx), request.into_inner()) {
+
+            let future = cb(Arc::clone(ctx), request.into_inner());
+
+            return match future.await {
                 Ok(resp) => Ok(Response::new(resp)),
                 Err(status) => Err(status)
             }
@@ -150,7 +161,10 @@ impl<CTX: Send + Sync + 'static> SupervisorService for VirtualMachineServer<CTX>
 
     async fn restart_server(&self, request: Request<RestartServerRequest>) -> Result<Response<RestartServerResponse>, Status> {
         if let (Some(cb), Some(ctx)) = (self.restart_server_callback, &self.ctx) {
-            return match cb(Arc::clone(ctx), request.into_inner()) {
+
+            let future = cb(Arc::clone(ctx), request.into_inner());
+
+            return match future.await {
                 Ok(resp) => Ok(Response::new(resp)),
                 Err(status) => Err(status)
             }
@@ -165,4 +179,14 @@ impl<CTX: Send + Sync + 'static> SupervisorService for VirtualMachineServer<CTX>
         }
         Err(Status::not_found("Function is not implemented"))
     }
+}
+
+
+#[macro_export]
+macro_rules! async_cb {
+    (|$ctx:ident, $req:ident| $body:block) => {
+        |$ctx, $req| {
+            Box::pin(async move { $body })
+        }
+    };
 }

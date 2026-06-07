@@ -25,6 +25,12 @@ pub mod proto_cli {
     }
 }
 
+
+#[cfg(feature = "vm_server")]
+pub use vm::BoxFuture;
+
+pub use netter_proto_macros;
+
 use std::net::SocketAddr;
 use prost_types::Duration;
 use std::time::SystemTime;
