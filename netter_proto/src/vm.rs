@@ -8,6 +8,8 @@ use crate::proto_supervisor::v1::supervisor_service_server::{SupervisorService, 
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + Sync + 'a>>;
 pub type Callback<CTX, Req, Res> = fn(Arc<CTX>, Req) -> BoxFuture<'static, Result<Res, Status>>;
 
+
+/// A Virtual Machine engine that encapsulates networking and Tonic.
 pub struct VirtualMachineServer<CTX> {
     ctx: Option<Arc<CTX>>,
     is_built: bool,
@@ -21,8 +23,9 @@ pub struct VirtualMachineServer<CTX> {
 impl<CTX: Send + Sync + 'static> VirtualMachineServer<CTX> {
     /// Start Virtual Machine Server work on given address.
     ///
-    /// # Panics
-    /// This function may panic if [Self::build()] is not called
+    /// # Panic
+    ///
+    /// Panic if built method [Self::build()] is not called before
     pub async fn start(self, address: impl Into<String>) -> Result<(), Box<dyn std::error::Error>> {
         if !self.is_built {
             panic!("[VM] VirtualMachineServer is not built!");
@@ -95,6 +98,11 @@ impl<CTX> VirtualMachineServer<CTX> {
         self
     }
 
+    /// Final step of building server configuration.
+    ///
+    /// # Panic
+    ///
+    /// Panic at compile time if not all callbacks was provided (methods `with_...`)
     pub const fn build(mut self) -> Self {
         if self.stop_server_callback.is_none() {
             panic!("[VM] `stop_server_callback` is not set. Please, init this callback from `with_stop_server` function");
@@ -182,6 +190,7 @@ impl<CTX: Send + Sync + 'static> SupervisorService for VirtualMachineServer<CTX>
 }
 
 
+/// This macro convert given closure to `Box::pin(async move { $body })`
 #[macro_export]
 macro_rules! async_cb {
     (|$ctx:ident, $req:ident| $body:block) => {

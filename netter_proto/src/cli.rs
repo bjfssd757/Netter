@@ -15,6 +15,7 @@ use crate::{
     },
 };
 
+/// Console gRPC client for interacting with the Supervisor.
 pub struct CliClient {
     inner: CliServiceClient<Channel>,
 }

@@ -8,6 +8,7 @@ use crate::proto_cli::v1::{GetInfoAboutServerRequest, GetInfoAboutServerResponse
 use crate::proto_shared::v1::{GetRuntimeInfoRequest, RestartServerRequest, RestartServerResponse, Server, StartServerRequest, StartServerResponse, StopServerRequest, StopServerResponse};
 use crate::proto_supervisor::v1::supervisor_service_client::SupervisorServiceClient;
 
+/// Supervisor proxy server (gRPC API Gateway) serving CLI clients.
 pub struct SupervisorServer {
     client: SupervisorClient
 }
@@ -96,6 +97,7 @@ impl CliService for SupervisorServer {
     }
 }
 
+/// High-level gRPC client of Supervisor for sending commands to the Virtual Machine.
 pub struct SupervisorClient {
     inner: SupervisorServiceClient<Channel>,
 }
