@@ -25,7 +25,7 @@ pub mod proto_cli {
     }
 }
 
-
+use std::fmt::Formatter;
 #[cfg(feature = "vm_server")]
 pub use vm::BoxFuture;
 
@@ -41,6 +41,34 @@ use proto_shared::v1::{
     Route,
     TlsConfiguration
 };
+
+#[derive(Debug)]
+pub struct SendSyncErrorWrapper(Box<dyn std::error::Error>);
+
+impl std::fmt::Display for SendSyncErrorWrapper {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self.0, f)
+    }
+}
+
+impl std::error::Error for SendSyncErrorWrapper {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.0.source()
+    }
+}
+
+unsafe impl Send for SendSyncErrorWrapper {}
+unsafe impl Sync for SendSyncErrorWrapper {}
+
+pub trait IntoSendSync {
+    fn into_send_sync(self) -> Box<dyn std::error::Error + Send + Sync>;
+}
+
+impl IntoSendSync for Box<dyn std::error::Error> {
+    fn into_send_sync(self) -> Box<dyn std::error::Error + Send + Sync> {
+        Box::new(SendSyncErrorWrapper(self))
+    }
+}
 
 pub struct ServerBuilder {
     inner: Server,

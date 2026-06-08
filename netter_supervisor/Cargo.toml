@@ -1,0 +1,8 @@
+[package]
+name = "netter_supervisor"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+netter_proto = { path = "../netter_proto" }
+tokio = { version = "1.52.3", features = ["net", "macros", "rt-multi-thread", "time"] }

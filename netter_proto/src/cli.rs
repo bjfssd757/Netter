@@ -1,7 +1,8 @@
 use prost_types::Duration;
 use tonic::codegen::StdError;
 use tonic::Request;
-use tonic::transport::Channel;
+use tonic::transport::{Channel, Endpoint, Uri};
+use tower::service_fn;
 use crate::{
     proto_cli::v1::{
         cli_service_client::CliServiceClient,
@@ -21,6 +22,47 @@ pub struct CliClient {
 }
 
 impl CliClient {
+    pub async fn connect_with_socket(path: &str) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let endpoint = Endpoint::from_static("http://[::]:50051");
+
+        let path_str = path.to_string();
+
+        let channel = endpoint.connect_with_connector(service_fn(move |_: Uri| {
+            let path = path_str.clone();
+            async move {
+                #[cfg(unix)]
+                {
+                    let stream = tokio::net::UnixStream::connect(path).await?;
+                    Ok::<_, std::io::Error>(hyper_util::rt::TokioIo::new(stream))
+                }
+
+                #[cfg(windows)]
+                {
+                    use tokio::net::windows::named_pipe::ClientOptions;
+                    use std::time::Duration;
+
+                    const ERROR_PIPE_BUSY: i32 = 231;
+
+                    let client = loop {
+                        match ClientOptions::new().open(&path) {
+                            Ok(client) => break client,
+                            Err(e) if e.raw_os_error() == Some(ERROR_PIPE_BUSY) => {
+                                tokio::time::sleep(Duration::from_millis(20)).await;
+                            }
+                            Err(e) => return Err(e)
+                        }
+                    };
+
+                    Ok::<_, std::io::Error>(hyper_util::rt::TokioIo::new(client))
+                }
+            }
+        })).await?;
+
+        Ok(Self {
+            inner: CliServiceClient::new(channel)
+        })
+    }
+
     pub async fn connect<D>(dst: D) -> Result<Self, Box<dyn std::error::Error + Send + Sync>>
     where
         D: TryInto<tonic::transport::Endpoint>,

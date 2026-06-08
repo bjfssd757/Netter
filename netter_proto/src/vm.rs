@@ -1,9 +1,11 @@
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::Arc;
+use tokio_stream::Stream;
 use tonic::{Request, Response, Status};
 use crate::proto_shared::v1::{GetRuntimeInfoRequest, GetRuntimeInfoResponse, RestartServerRequest, RestartServerResponse, StartServerRequest, StartServerResponse, StopServerRequest, StopServerResponse};
 use crate::proto_supervisor::v1::supervisor_service_server::{SupervisorService, SupervisorServiceServer};
+use crate::supervisor::CrossPlatformStream;
 
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + Sync + 'a>>;
 pub type Callback<CTX, Req, Res> = fn(Arc<CTX>, Req) -> BoxFuture<'static, Result<Res, Status>>;
@@ -21,6 +23,61 @@ pub struct VirtualMachineServer<CTX> {
 }
 
 impl<CTX: Send + Sync + 'static> VirtualMachineServer<CTX> {
+
+    /// Start Virtual Machine Server work on given socket.
+    pub async fn start_with_socket(
+        self,
+        path: impl Into<String>
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let path = path.into();
+
+        let svc = SupervisorServiceServer::new(self);
+        let router = tonic::transport::Server::builder().add_service(svc);
+
+        #[cfg(unix)]
+        {
+            let _ = std::fs::remove_file(&path);
+            let listener = tokio::net::UnixListener::bind(&path)?;
+
+            let incoming: Pin<Box<dyn Stream<Item = Result<CrossPlatformStream, Box<dyn std::error::Error + Send + Sync>>> + Send>> =
+                Box::pin(async_stream::try_stream! {
+                loop {
+                    let (stream, _) = listener.accept().await
+                        .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+                    yield CrossPlatformStream::Uds(stream);
+                }
+            });
+            router.serve_with_incoming(incoming).await?;
+        }
+
+        #[cfg(windows)]
+        {
+            use tokio::net::windows::named_pipe::ServerOptions;
+
+
+            let pipe_name = path.clone();
+            let incoming: Pin<Box<dyn Stream<Item = Result<CrossPlatformStream, Box<dyn std::error::Error + Send + Sync>>> + Send>> =
+                Box::pin(async_stream::try_stream! {
+                let mut is_first = true;
+                loop {
+                    let server = ServerOptions::new()
+                        .first_pipe_instance(is_first)
+                        .create(&pipe_name)
+                        .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+
+                    is_first = false;
+
+                    server.connect().await
+                        .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+                    yield CrossPlatformStream::NamedPipe(server);
+                }
+            });
+            router.serve_with_incoming(incoming).await?;
+        }
+
+        Ok(())
+    }
+
     /// Start Virtual Machine Server work on given address.
     ///
     /// # Panic

@@ -15,8 +15,11 @@ members = [
     "netter_advanced_plugins",
     "netter_sdk",
     "cesium_vm",
+    "cesium_vm/cesium_sdk",
+    "cesium_vm/cesium_macros",
     "netter_proto",
     "netter_proto/netter_proto_macros",
+    "netter_supervisor",
 ]
 resolver = "2"
 

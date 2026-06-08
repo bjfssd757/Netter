@@ -77,13 +77,55 @@ async fn e2e_success_cli_to_vm_flow() {
         let client = SupervisorClient::connect("http://127.0.0.1:50052")
             .await.expect("Failed to connect SupervisorClient to VMServer");
 
-        SupervisorServer::new(client).start("127.0.0.1:50053").await
+        SupervisorServer::new(client).start_with_address("127.0.0.1:50053").await
             .expect("Failed to start SupervisorServer");
     });
 
     tokio::time::sleep(Duration::from_secs(1)).await;
 
     let client = CliClient::connect("http://127.0.0.1:50053").await
+        .expect("Failed to connect to the server");
+
+    let server = Server::default();
+
+    let id = client.start_server(server).await.expect("Failed to send request `start_server`");
+
+    assert_eq!(id, 2);
+}
+
+#[tokio::test]
+async fn e2e_success_cli_to_vm_socket_flow() {
+    tokio::spawn(async move {
+        VirtualMachineServer::new(Context)
+            .with_start_server(success_start_cb)
+            .with_ping(|_| {})
+            .with_get_runtime_info(async_cb!(|ctx, req| {
+                Err(Status::unimplemented(""))
+            }))
+            .with_stop_server(async_cb!(|ctx, req| {
+                Err(Status::unimplemented(""))
+            }))
+            .with_restart_server(async_cb!(|ctx, req| {
+                Err(Status::unimplemented(""))
+            }))
+            .build()
+            .start_with_socket(r"\\.\pipe\netter_vm")
+            .await.expect("Failed to start server");
+    });
+
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
+    tokio::spawn(async move {
+        let client = SupervisorClient::connect_with_socket(r"\\.\pipe\netter_vm")
+            .await.expect("Failed to connect SupervisorClient to VMServer");
+
+        SupervisorServer::new(client).start_with_socket(r"\\.\pipe\netter_supervisor").await
+            .expect("Failed to start SupervisorServer");
+    });
+
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
+    let client = CliClient::connect_with_socket(r"\\.\pipe\netter_supervisor").await
         .expect("Failed to connect to the server");
 
     let server = Server::default();

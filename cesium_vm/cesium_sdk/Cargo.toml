@@ -1,0 +1,8 @@
+[package]
+name = "cesium_sdk"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+wasmtime = "45.0.1"
+anyhow = "1.0.102"

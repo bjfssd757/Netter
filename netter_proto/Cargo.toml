@@ -15,6 +15,11 @@ prost-types = "0.14.4"
 tonic = { version = "0.14.6", features = ["codegen"] }
 tonic-prost = "0.14.6"
 netter_proto_macros = { path = "netter_proto_macros", version = "0.1.0" }
+async-stream = "0.3.6"
+tokio = { version = "1.52.3", features = ["net", "rt-multi-thread"] }
+hyper-util = "0.1.20"
+tokio-stream = "0.1.18"
+tower = "0.5.3"
 
 [build-dependencies]
 tonic-prost-build = "0.14.6"
